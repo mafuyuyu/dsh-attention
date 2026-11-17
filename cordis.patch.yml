@@ -1,0 +1,7 @@
+# Bundle layer for dsh-ask-timer: insert the one plugin row.
+# A profile that installs this package through dsh.profile.bundles uses this file;
+# a profile that mounts the row directly in its own cordis.patch.yml must NOT also
+# list the package as a bundle (one insert per id).
+- insert:
+    - id: ask-timer
+      name: 'dsh-ask-timer'

@@ -1,0 +1,60 @@
+{
+  "name": "dsh-ask-timer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "答题倒计时与提示音：DeepSeek Harness 等待你回答 ask_user_question 时显示剩余时间，最后几秒每秒滴答，可在设置页导入自定义音频。",
+  "author": "mafuyuyu",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "dsh": ">=0.2.2-rc.3"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "ask-user-question",
+    "countdown",
+    "timer"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README_EN.md",
+    "LICENSE",
+    "icon.svg",
+    "assets",
+    "test"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node test/host-routes.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mafuyuyu/dsh-ask-timer.git"
+  },
+  "homepage": "https://github.com/mafuyuyu/dsh-ask-timer",
+  "bugs": {
+    "url": "https://github.com/mafuyuyu/dsh-ask-timer/issues"
+  }
+}

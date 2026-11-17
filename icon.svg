@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" role="img" aria-label="Answer timer">
+  <g fill="none" stroke="#F59E0B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="16.5" cy="19" r="10.5"/>
+    <path d="M16.5 8.5V5.8"/>
+    <path d="M12.8 5.8h7.4"/>
+    <path d="M24.4 11.1l1.9-1.9"/>
+    <path d="M13.3 15.4a3.5 3.5 0 1 1 4.9 3.2c-.9.4-1.4 1.1-1.4 2v.6"/>
+    <circle cx="16.8" cy="24.4" r="0.8" fill="#F59E0B" stroke="none"/>
+  </g>
+  <g fill="none" stroke="#F59E0B" stroke-width="1.7" stroke-linecap="round" opacity="0.85">
+    <path d="M27.6 17.6a5.3 5.3 0 0 1 0 7.4"/>
+    <path d="M30.4 14.4a9.2 9.2 0 0 1 0 13.8"/>
+  </g>
+</svg>
