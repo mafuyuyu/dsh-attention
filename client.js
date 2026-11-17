@@ -87,6 +87,8 @@ window.__ModuleLoader__.load({
     const approvalReminders = new Map()
     /** Pending system notifications keyed by session + interaction key. */
     const pendingNotifications = new Map()
+    /** Last observed system-notification capability, for the settings page. */
+    const notificationProbe = { support: 'unknown', permission: 'unknown', error: '' }
 
     /** Notify the settings page after a settings change or config refresh. */
     function bumpSettings() {
@@ -209,6 +211,12 @@ window.__ModuleLoader__.load({
           notifyReviewBody: '有一个计划在等待你审核',
           notifyApprovalTitle: '权限审批等待中',
           notifyApprovalBody: '有工具正在等待你的授权',
+          testNotify: '发送测试通知',
+          notificationPermission: '系统通知权限',
+          notifyUnsupported: '当前环境不支持系统通知',
+          notifyTestSent: '已发送一条测试通知，请查看系统通知区域。',
+          notifyTestFailed: '测试通知失败',
+          notifyBlocked: '如果权限是 denied，请在浏览器/系统的网站设置里允许本页通知。',
           note: '支持 mp3 / wav / ogg / m4a / flac / webm，最大 8 MB。两组设置分别保存；导入音频、音量与开关保存在 DSH 数据目录。浏览器要求页面先有一次点击才允许发声；系统气泡通知还需要操作系统允许 DSH 的通知。',
         }
         : {
@@ -256,6 +264,12 @@ window.__ModuleLoader__.load({
           notifyReviewBody: 'A plan is waiting for your review',
           notifyApprovalTitle: 'Approval needed',
           notifyApprovalBody: 'A tool is waiting for your permission',
+          testNotify: 'Send test notification',
+          notificationPermission: 'System notification permission',
+          notifyUnsupported: 'System notifications are not supported here',
+          notifyTestSent: 'A test notification was sent; check the system notification area.',
+          notifyTestFailed: 'Test notification failed',
+          notifyBlocked: 'If permission is denied, allow notifications for this page in the browser or system settings.',
           note: 'mp3 / wav / ogg / m4a / flac / webm, up to 8 MB. The two groups are stored separately in the DSH data directory. Browsers require one click before audio can play; system notifications also need the operating system to allow DSH notifications.',
         }
     }
@@ -334,13 +348,37 @@ window.__ModuleLoader__.load({
      * Ask for notification permission once, ideally from a user gesture.
      * @returns the permission promise, or undefined when notifications are unavailable.
      */
+    function refreshNotificationProbe() {
+      try {
+        if (typeof Notification === 'undefined') {
+          notificationProbe.support = 'unsupported'
+          notificationProbe.permission = 'none'
+        } else {
+          notificationProbe.support = 'supported'
+          notificationProbe.permission = Notification.permission
+        }
+      } catch (error) {
+        notificationProbe.support = 'error'
+        notificationProbe.error = String((error && error.message) || error)
+      }
+      return notificationProbe
+    }
+
     function ensureNotificationPermission() {
       try {
         if (typeof Notification === 'undefined') return undefined
         if (Notification.permission === 'granted' || Notification.permission === 'denied') {
+          notificationProbe.permission = Notification.permission
           return Promise.resolve(Notification.permission)
         }
-        return Notification.requestPermission()
+        const result = Notification.requestPermission()
+        if (result && typeof result.then === 'function') {
+          return result.then((permission) => {
+            notificationProbe.permission = permission
+            return permission
+          })
+        }
+        return result
       } catch {
         return undefined
       }
@@ -385,7 +423,9 @@ window.__ModuleLoader__.load({
           pendingNotifications.delete(key)
         }
         pendingNotifications.set(key, notification)
-      } catch {
+        notificationProbe.error = ''
+      } catch (error) {
+        notificationProbe.error = String((error && error.message) || error)
         // Notifications are optional; audio reminders keep working.
       }
     }
@@ -858,6 +898,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState('')
       const [message, setMessage] = React.useState(undefined)
       const [saveError, setSaveError] = React.useState(undefined)
+      const [probe, setProbe] = React.useState(() => refreshNotificationProbe())
       const t = copy()
 
       /** @param group - answer or approval. @param patch - preference patch. */
@@ -920,6 +961,27 @@ window.__ModuleLoader__.load({
           setMessage({ ok: false, text: String((error && error.message) || error) })
         } finally {
           setBusy('')
+        }
+      }
+
+      /** Send one generic test notification so the user can check the OS surface. */
+      async function testSystemNotification() {
+        setMessage(undefined)
+        try {
+          const permission = await ensureNotificationPermission()
+          setProbe({ ...refreshNotificationProbe() })
+          if (typeof Notification === 'undefined') throw new Error(t.notifyUnsupported)
+          if (permission !== 'granted') throw new Error(t.notificationPermission + ': ' + String(permission))
+          new Notification('dsh-attention 测试通知', {
+            body: '看到这条系统通知说明气泡通知可用。',
+            silent: true,
+          })
+          setMessage({ ok: true, text: t.notifyTestSent })
+        } catch (error) {
+          refreshNotificationProbe()
+          notificationProbe.error = String((error && error.message) || error)
+          setProbe({ ...notificationProbe })
+          setMessage({ ok: false, text: t.notifyTestFailed + '：' + notificationProbe.error })
         }
       }
 
@@ -1126,6 +1188,11 @@ window.__ModuleLoader__.load({
         saveError === undefined ? null : h('div', {
           style: { fontSize: '12px', color: 'var(--dsw-alias-label-danger, #e5484d)' },
         }, saveError),
+        h('div', { style: rowStyle },
+          h('button', { type: 'button', style: BUTTON_STYLE, onClick: () => void testSystemNotification() }, t.testNotify),
+          h('span', { style: hintStyle }, t.notificationPermission + '：' + probe.permission + (probe.error ? ' · ' + probe.error : '')),
+        ),
+        h('div', { style: { fontSize: '12px', lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary)' } }, t.notifyBlocked),
         h('div', { style: { fontSize: '12px', lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary)' } }, t.note),
       )
     }
@@ -1144,6 +1211,7 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'remote'],
       apply(ctx) {
         loadConfig()
+        refreshNotificationProbe()
         try {
           window.addEventListener('pointerdown', unlockAudio, true)
         } catch {

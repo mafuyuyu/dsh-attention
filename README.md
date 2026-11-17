@@ -6,7 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.2-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.3-orange)](./package.json)
 
 **面向 [DeepSeek Harness](https://www.deepseek.com/harness/) 的答题与审批提醒插件：等待你回答 `ask_user_question` 时显示倒计时并在最后几秒滴答；工具请求权限审批时按间隔播放提醒音，直到你批准或拒绝。**
 
@@ -179,6 +179,8 @@ timed 提问（`mode: timed`）直接使用问题卡片自带的前台窗口；�
 - 两组偏好：同目录 `settings.json`，优先级高于 YAML 配置里的同名键。
 
 浏览器要求页面先有一次点击才允许发声；如果预览没声音，先点一下页面再试。系统气泡通知还需要操作系统允许 DSH 的通知。
+
+页面底部还有「发送测试通知」按钮，并显示当前系统通知权限（`granted` / `default` / `denied` / `unsupported`）。如果显示 `denied`，请在浏览器或系统的网站设置里允许本页通知；如果是 `granted` 却仍看不到气泡，请检查 Windows 通知中心 / 操作中心或 macOS 通知设置是否允许 DSH。
 
 ## 配置
 

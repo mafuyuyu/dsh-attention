@@ -6,7 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.2-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.3-orange)](./package.json)
 
 **Answer and approval alerts for [DeepSeek Harness](https://www.deepseek.com/harness/): a countdown with last-seconds ticks while `ask_user_question` waits for you, and a repeating chime while a tool asks for permission approval, until you allow or reject it.**
 
@@ -179,6 +179,8 @@ Storage:
 - both preference groups: `settings.json` in the same directory, overriding YAML row keys.
 
 Browsers require one click in the page before audio may play; if Preview is silent, click the page once and try again. System notifications also need the operating system to allow DSH notifications.
+
+The bottom of the settings page has a **Send test notification** button and shows the current system notification permission (`granted` / `default` / `denied` / `unsupported`). If it says `denied`, allow notifications for this page in the browser or system settings; if it says `granted` but no bubble appears, check the Windows Notification Center or the macOS notification settings for DSH.
 
 ## Configuration
 
