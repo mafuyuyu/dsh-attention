@@ -89,6 +89,10 @@ window.__ModuleLoader__.load({
     const pendingNotifications = new Map()
     /** Last observed system-notification capability, for the settings page. */
     const notificationProbe = { support: 'unknown', permission: 'unknown', error: '', last: '' }
+    /** Window focus store: system bubbles only appear while DSH is unfocused or hidden. */
+    const focusListeners = new Set()
+    let windowFocused = true
+    let focusVersion = 0
 
     /** Notify the settings page after a settings change or config refresh. */
     function bumpSettings() {
@@ -204,7 +208,7 @@ window.__ModuleLoader__.load({
           approvalInterval: '提醒间隔',
           secondsUnit: '秒',
           systemNotify: '系统气泡通知',
-          systemNotifyHint: '只提示“有提问或权限审批在等待”，不显示问题或审批内容。',
+          systemNotifyHint: '只在 DSH 窗口失焦、最小化或切到其它应用时弹出；窗口可见时只用应用内卡片和提示音。气泡只提示“有提问或权限审批在等待”，不显示问题或审批内容。',
           notifyQuestionTitle: '答题等待中',
           notifyQuestionBody: '有一个问题在等待你回答',
           notifyReviewTitle: '计划审核等待中',
@@ -257,7 +261,7 @@ window.__ModuleLoader__.load({
           approvalInterval: 'Interval',
           secondsUnit: 's',
           systemNotify: 'System notification',
-          systemNotifyHint: 'Only says a question or approval is waiting; never shows question or approval content.',
+          systemNotifyHint: 'Only appears while the DSH window is unfocused, minimized, or you switched to another app; while it is visible, the in-app card and chimes are used. The bubble only says a question or approval is waiting, never its content.',
           notifyQuestionTitle: 'Answer needed',
           notifyQuestionBody: 'A question is waiting for your answer',
           notifyReviewTitle: 'Review needed',
@@ -344,10 +348,32 @@ window.__ModuleLoader__.load({
       beepGroup(group)
     }
 
-    /**
-     * Ask for notification permission once, ideally from a user gesture.
-     * @returns the permission promise, or undefined when notifications are unavailable.
-     */
+    /** Refresh the focus flag from document.hasFocus() and visibility. */
+    function refreshWindowFocus() {
+      let focused = true
+      try {
+        focused = document.hasFocus() && document.visibilityState !== 'hidden'
+      } catch {
+        focused = true
+      }
+      if (focused === windowFocused) return
+      windowFocused = focused
+      focusVersion += 1
+      for (const listener of focusListeners) listener()
+    }
+
+    /** @param listener - focus change listener. @returns its unsubscribe. */
+    function subscribeFocus(listener) {
+      focusListeners.add(listener)
+      return () => { focusListeners.delete(listener) }
+    }
+
+    /** @returns focus version snapshot. */
+    function focusSnapshot() {
+      return focusVersion
+    }
+
+    /** Refresh the last notification capability probe. */
     function refreshNotificationProbe() {
       try {
         if (typeof Notification === 'undefined') {
@@ -364,6 +390,10 @@ window.__ModuleLoader__.load({
       return notificationProbe
     }
 
+    /**
+     * Ask for notification permission once, ideally from a user gesture.
+     * @returns the permission promise, or undefined when notifications are unavailable.
+     */
     function ensureNotificationPermission() {
       try {
         if (typeof Notification === 'undefined') return undefined
@@ -449,6 +479,10 @@ window.__ModuleLoader__.load({
      * @param statuses - Session status map from useSessionStatus.
      */
     function syncSystemNotifications(statuses) {
+      if (windowFocused) {
+        for (const key of [...pendingNotifications.keys()]) closeSystemNotification(key)
+        return
+      }
       const active = new Map()
       if (statuses && typeof statuses.forEach === 'function') {
         statuses.forEach((status, sessionId) => {
@@ -881,11 +915,12 @@ window.__ModuleLoader__.load({
      */
     function AttentionWatcher(props) {
       const version = React.useSyncExternalStore(subscribeSettings, settingsSnapshot)
+      const focus = React.useSyncExternalStore(subscribeFocus, focusSnapshot)
       const statuses = props.useSessionStatus(snapshot => snapshot)
       React.useEffect(() => {
         syncApprovalReminders(statuses)
         syncSystemNotifications(statuses)
-      }, [statuses, version])
+      }, [statuses, version, focus])
       React.useEffect(() => () => {
         for (const key of [...pendingNotifications.keys()]) closeSystemNotification(key)
       }, [])
@@ -1212,6 +1247,26 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         loadConfig()
         refreshNotificationProbe()
+        ctx.effect(() => {
+          const update = () => refreshWindowFocus()
+          try {
+            window.addEventListener('focus', update)
+            window.addEventListener('blur', update)
+            document.addEventListener('visibilitychange', update)
+            update()
+          } catch {
+            // A non-browser host simply keeps the focused default.
+          }
+          return () => {
+            try {
+              window.removeEventListener('focus', update)
+              window.removeEventListener('blur', update)
+              document.removeEventListener('visibilitychange', update)
+            } catch {
+              // Teardown is best-effort.
+            }
+          }
+        }, 'attention: window focus')
         try {
           window.addEventListener('pointerdown', unlockAudio, true)
         } catch {

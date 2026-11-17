@@ -6,7 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.4-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.5-orange)](./package.json)
 
 **Answer and approval alerts for [DeepSeek Harness](https://www.deepseek.com/harness/): a countdown with last-seconds ticks while `ask_user_question` waits for you, and a repeating chime while a tool asks for permission approval, until you allow or reject it.**
 
@@ -30,7 +30,7 @@ Each group has its own audio, volume, and switches.
 | **Last-seconds ticks** | During the last `countdownSeconds` seconds (default 10) a short tick plays once per second, with a higher pitch for the final 3 seconds |
 | **Approval reminder** | One immediate chime when a permission approval appears, then a repeat every `intervalSeconds` (default 60) until you allow or reject; repeat can be turned off so it chimes only once |
 | **Two independent groups** | Answer and approval each have their own audio, volume, and switch; answer also has a tick switch and length, approval a repeat switch and interval |
-| **System notifications** | Optional for both groups: an OS-level bubble says a question or approval is waiting, never its content; off by default |
+| **System notifications** | Optional for both groups: an OS-level bubble says a question or approval is waiting, never its content, and **only appears while the DSH window is unfocused, minimized, or you switched to another app**; off by default |
 | **Keeps sounding across pages** | Sounds are driven by module-level schedulers, so they continue after switching to another Session or plugin page; returning does not reset, replay, or double anything, and there is no floating overlay |
 | **Settings page** | One card per group: import/preview/restore, volume slider, switches and parameters |
 | **Test command** | `/attention-test` asks three consecutive questions that mimic a real ask: different content, one chime each, and an automatic cancel at the deadline |
@@ -180,7 +180,9 @@ Storage:
 
 Browsers require one click in the page before audio may play; if Preview is silent, click the page once and try again. System notifications also need the operating system to allow DSH notifications.
 
-The bottom of the settings page has a **Send test notification** button and shows the current system notification permission (`granted` / `default` / `denied` / `unsupported`) plus the last automatic attempt (for example `question:ok`). If it says `denied`, allow notifications for this page in the browser or system settings; if it says `granted` but no bubble appears, check the Windows Notification Center or the macOS notification settings for DSH.
+Automatic bubbles appear only while the DSH window is unfocused, minimized, or you switched to another app; they close when the window regains focus. The **Send test notification** button at the bottom of the settings page is a manual diagnostic and is not subject to that restriction.
+
+The same area also shows the current system notification permission (`granted` / `default` / `denied` / `unsupported`) and the last automatic attempt (for example `question:ok`). If it says `denied`, allow notifications for this page in the browser or system settings; if it says `granted` but no bubble appears, check the Windows Notification Center or the macOS notification settings for DSH.
 
 ## Configuration
 
