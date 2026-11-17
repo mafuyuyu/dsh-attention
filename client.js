@@ -88,7 +88,7 @@ window.__ModuleLoader__.load({
     /** Pending system notifications keyed by session + interaction key. */
     const pendingNotifications = new Map()
     /** Last observed system-notification capability, for the settings page. */
-    const notificationProbe = { support: 'unknown', permission: 'unknown', error: '' }
+    const notificationProbe = { support: 'unknown', permission: 'unknown', error: '', last: '' }
 
     /** Notify the settings page after a settings change or config refresh. */
     function bumpSettings() {
@@ -410,8 +410,6 @@ window.__ModuleLoader__.load({
         const notification = new Notification(title, {
           body,
           silent: true,
-          requireInteraction: true,
-          tag: 'dsh-attention:' + key,
         })
         notification.onclick = () => {
           try { window.focus() } catch {
@@ -424,8 +422,10 @@ window.__ModuleLoader__.load({
         }
         pendingNotifications.set(key, notification)
         notificationProbe.error = ''
+        notificationProbe.last = kind + ':ok'
       } catch (error) {
         notificationProbe.error = String((error && error.message) || error)
+        notificationProbe.last = kind + ':error ' + notificationProbe.error
         // Notifications are optional; audio reminders keep working.
       }
     }
@@ -1190,7 +1190,7 @@ window.__ModuleLoader__.load({
         }, saveError),
         h('div', { style: rowStyle },
           h('button', { type: 'button', style: BUTTON_STYLE, onClick: () => void testSystemNotification() }, t.testNotify),
-          h('span', { style: hintStyle }, t.notificationPermission + '：' + probe.permission + (probe.error ? ' · ' + probe.error : '')),
+          h('span', { style: hintStyle }, t.notificationPermission + '：' + probe.permission + (probe.last ? ' · ' + probe.last : '') + (probe.error ? ' · ' + probe.error : '')),
         ),
         h('div', { style: { fontSize: '12px', lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary)' } }, t.notifyBlocked),
         h('div', { style: { fontSize: '12px', lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary)' } }, t.note),

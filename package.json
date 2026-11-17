@@ -1,6 +1,6 @@
 {
   "name": "dsh-attention",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "答题与审批提醒：DeepSeek Harness 等待回答 ask_user_question 时显示倒计时，权限审批时每分钟提示，支持自定义提示音与独立音量。",
   "author": "mafuyuyu",
