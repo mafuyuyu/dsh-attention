@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const home = mkdtempSync(join(tmpdir(), 'ask-timer-test-'))
+const home = mkdtempSync(join(tmpdir(), 'attention-test-'))
 process.env.DSH_HOME = home
 
 const handlers = new Map()
@@ -41,51 +41,84 @@ const ctx = {
 }
 
 const mod = await import(new URL('../index.js', import.meta.url).href)
-mod.apply(ctx, { volume: 0.5 })
-const configFetch = handlers.get('/api/ask-timer/config|GET')
-const audioFetch = handlers.get('/api/ask-timer/audio|GET,POST,DELETE')
-const settingsFetch = handlers.get('/api/ask-timer/settings|PUT')
+mod.apply(ctx, { answer: { volume: 0.5 }, approval: { intervalSeconds: 30 } })
+const configFetch = handlers.get('/api/attention/config|GET')
+const audioFetch = handlers.get('/api/attention/audio|GET,POST,DELETE')
+const settingsFetch = handlers.get('/api/attention/settings|PUT')
 if (!configFetch || !audioFetch || !settingsFetch) throw new Error('routes not registered: ' + [...handlers.keys()].join(', '))
-if (!commandDef || commandDef.name !== 'ask-timer-test') throw new Error('test command not registered')
+if (!commandDef || commandDef.name !== 'attention-test') throw new Error('test command not registered')
 
-const base = 'http://local/api/ask-timer/audio'
+const base = 'http://local/api/attention/audio'
 const config = async () => (await configFetch()).json()
 
 const first = await config()
-if (first.hasAudio !== true || first.audioSource !== 'bundled') throw new Error('expected bundled default: ' + JSON.stringify(first))
-if (first.volume !== 0.5 || first.soundEnabled !== true) throw new Error('expected config defaults: ' + JSON.stringify(first))
-if (first.countdownEnabled !== true || first.countdownSeconds !== 10) throw new Error('expected countdown defaults: ' + JSON.stringify(first))
+if (first.answer.audioSource !== 'bundled' || first.approval.audioSource !== 'bundled') {
+  throw new Error('expected bundled defaults: ' + JSON.stringify(first))
+}
+if (first.answer.volume !== 0.5 || first.answer.enabled !== true) throw new Error('answer config defaults: ' + JSON.stringify(first.answer))
+if (first.answer.countdownEnabled !== true || first.answer.countdownSeconds !== 10) throw new Error('answer countdown defaults')
+if (first.approval.volume !== 0.7 || first.approval.intervalSeconds !== 30 || first.approval.repeatEnabled !== true) {
+  throw new Error('approval config defaults: ' + JSON.stringify(first.approval))
+}
 
 const wav = Buffer.from('RIFF....WAVEfmt ')
-const upload = await audioFetch(new Request(base, {
+const upload = await audioFetch(new Request(base + '?group=answer', {
   method: 'POST',
   headers: { 'x-audio-name': encodeURIComponent('ding.wav'), 'content-type': 'audio/wav' },
   body: wav,
 }))
-if (upload.status !== 200) throw new Error('upload failed: ' + upload.status + ' ' + await upload.text())
-const second = await config()
-if (second.hasAudio !== true || second.audioSource !== 'imported' || second.audioName !== 'custom.wav') {
-  throw new Error('imported audio not reported: ' + JSON.stringify(second))
-}
+if (upload.status !== 200) throw new Error('answer upload failed: ' + upload.status + ' ' + await upload.text())
+let current = await config()
+if (current.answer.audioSource !== 'imported' || current.answer.audioName !== 'answer.wav') throw new Error('answer import missing: ' + JSON.stringify(current.answer))
+if (current.approval.audioSource !== 'bundled') throw new Error('approval must stay independent: ' + JSON.stringify(current.approval))
 
-const put = await settingsFetch(new Request('http://local/api/ask-timer/settings', {
+const uploadApproval = await audioFetch(new Request(base + '?group=approval', {
+  method: 'POST',
+  headers: { 'x-audio-name': encodeURIComponent('bell.mp3'), 'content-type': 'audio/mpeg' },
+  body: wav,
+}))
+if (uploadApproval.status !== 200) throw new Error('approval upload failed: ' + uploadApproval.status)
+current = await config()
+if (current.approval.audioSource !== 'imported' || current.approval.audioName !== 'approval.mp3') throw new Error('approval import missing: ' + JSON.stringify(current.approval))
+if (current.answer.audioName !== 'answer.wav') throw new Error('answer import changed: ' + JSON.stringify(current.answer))
+
+const bad = await audioFetch(new Request(base + '?group=answer', {
+  method: 'POST',
+  headers: { 'x-audio-name': encodeURIComponent('notes.txt'), 'content-type': 'text/plain' },
+  body: wav,
+}))
+if (bad.status !== 415) throw new Error('expected 415 for unsupported type, got ' + bad.status)
+
+const put = await settingsFetch(new Request('http://local/api/attention/settings', {
   method: 'PUT',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ volume: 0.25, soundEnabled: false, countdownEnabled: false, countdownSeconds: 5 }),
+  body: JSON.stringify({
+    answer: { volume: 0.25, enabled: false, countdownEnabled: false, countdownSeconds: 5 },
+    approval: { volume: 0.4, repeatEnabled: false, intervalSeconds: 7 },
+  }),
 }))
 if (put.status !== 200) throw new Error('settings put failed: ' + put.status + ' ' + await put.text())
 const saved = await config()
-if (saved.volume !== 0.25 || saved.soundEnabled !== false || saved.countdownEnabled !== false || saved.countdownSeconds !== 5) {
-  throw new Error('preferences not persisted: ' + JSON.stringify(saved))
+if (saved.answer.volume !== 0.25 || saved.answer.enabled !== false || saved.answer.countdownEnabled !== false || saved.answer.countdownSeconds !== 5) {
+  throw new Error('answer preferences not persisted: ' + JSON.stringify(saved.answer))
+}
+if (saved.approval.volume !== 0.4 || saved.approval.repeatEnabled !== false || saved.approval.intervalSeconds !== 7) {
+  throw new Error('approval preferences not persisted: ' + JSON.stringify(saved.approval))
 }
 
-const removed = await audioFetch(new Request(base, { method: 'DELETE' }))
+const audioGet = await audioFetch(new Request(base + '?group=approval'))
+if (audioGet.status !== 200 || audioGet.headers.get('content-type') !== 'audio/mpeg') {
+  throw new Error('approval audio get failed: ' + audioGet.status + ' ' + audioGet.headers.get('content-type'))
+}
+
+const removed = await audioFetch(new Request(base + '?group=answer', { method: 'DELETE' }))
 if (removed.status !== 200) throw new Error('delete failed: ' + removed.status)
 const third = await config()
-if (third.audioSource !== 'bundled') throw new Error('expected bundled fallback: ' + JSON.stringify(third))
+if (third.answer.audioSource !== 'bundled') throw new Error('expected bundled fallback: ' + JSON.stringify(third.answer))
+if (third.approval.audioSource !== 'imported') throw new Error('approval must survive answer delete: ' + JSON.stringify(third.approval))
 
 const result = await commandDef.handler({
-  rawInput: '10',
+  rawInput: '',
   agent: { id: 'test-agent' },
   signal: new AbortController().signal,
   commandId: 'cmd-test',
@@ -98,8 +131,8 @@ if (new Set(ids).size !== 3) throw new Error('question ids must be unique per ru
 const parsed = ids.map((id) => {
   const parts = id.split('-')
   return {
-    test: id.startsWith('ask-timer-test-'),
-    run: parts[3],
+    test: id.startsWith('attention-test-'),
+    run: parts[2],
     index: Number(parts[parts.length - 2]),
     window: Number(parts[parts.length - 1]),
   }
@@ -110,4 +143,9 @@ if (parsed.some(item => item.run !== parsed[0].run || item.run === 'undefined'))
 if (!String(result.text).includes('连续 3 次')) throw new Error('unexpected summary: ' + result.text)
 
 rmSync(home, { recursive: true, force: true })
-console.log(JSON.stringify({ ok: true, bundled: first.audioSource, prefs: saved.volume + '/' + saved.soundEnabled + '/' + saved.countdownEnabled + '/' + saved.countdownSeconds, questions: ids.join('|') }))
+console.log(JSON.stringify({
+  ok: true,
+  bundled: first.answer.audioSource + '/' + first.approval.audioSource,
+  prefs: saved.answer.volume + '/' + saved.answer.enabled + '/' + saved.answer.countdownSeconds + '|' + saved.approval.volume + '/' + saved.approval.repeatEnabled + '/' + saved.approval.intervalSeconds,
+  questions: ids.join('|'),
+}))

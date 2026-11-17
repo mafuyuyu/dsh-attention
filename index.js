@@ -1,46 +1,63 @@
 /**
- * Host half of dsh-ask-timer.
+ * Host half of dsh-attention.
  *
- * Serves the settings, the chime file (imported, configured, or the packaged
- * default), stores the live preferences the settings page edits, and registers
- * the /ask-timer-test command that opens one timed test question.
+ * Serves the settings and audio for two independent reminder groups — answer
+ * countdown/chime and permission-approval reminders — under
+ * `$DSH_HOME/dsh-attention/`, migrates the legacy dsh-ask-timer directory once,
+ * and registers the /attention-test command.
  */
-import { readFile, writeFile, mkdir, rm, readdir, stat } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, rm, readdir, stat, copyFile } from 'node:fs/promises'
 import { extname, isAbsolute, resolve, join, basename, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
-export const name = 'ask-timer'
+export const name = 'attention'
 
 /** Routes, the test command, and the user-question service. */
 export const inject = ['connection', 'commands', 'userQuestions']
 
-const CONFIG_PATH = '/api/ask-timer/config'
-const AUDIO_PATH = '/api/ask-timer/audio'
-const SETTINGS_PATH = '/api/ask-timer/settings'
+const CONFIG_PATH = '/api/attention/config'
+const AUDIO_PATH = '/api/attention/audio'
+const SETTINGS_PATH = '/api/attention/settings'
 
-/** Largest accepted imported audio file. */
+const DATA_DIR_NAME = 'dsh-attention'
+const LEGACY_DIR_NAME = 'dsh-ask-timer'
+const GROUPS = ['answer', 'approval']
+
+/** Largest accepted uploaded audio file. */
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
-/** Number of consecutive questions /ask-timer-test asks. */
+/** Number of consecutive questions /attention-test asks. */
 const TEST_QUESTION_COUNT = 3
 
 /** Bounds of one test question's foreground window. */
 const MIN_TEST_WINDOW_MS = 15000
 const MAX_TEST_WINDOW_MS = 60000
 
-/** Packaged default chime, shipped with the plugin. */
+/** Packaged default chimes. */
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url))
-const BUNDLED_AUDIO = join(PACKAGE_DIR, 'assets', 'default.wav')
+const BUNDLED_AUDIO = {
+  answer: join(PACKAGE_DIR, 'assets', 'default.wav'),
+  approval: join(PACKAGE_DIR, 'assets', 'approval.wav'),
+}
 
 /** Deployment defaults; every key may be overridden by the row's config. */
 export const DEFAULTS = {
-  soundEnabled: true,
-  volume: 0.7,
   fallbackWindowMs: 600000,
-  countdownEnabled: true,
-  countdownSeconds: 10,
-  audioFile: '',
+  answer: {
+    enabled: true,
+    volume: 0.7,
+    countdownEnabled: true,
+    countdownSeconds: 10,
+    audioFile: '',
+  },
+  approval: {
+    enabled: true,
+    volume: 0.7,
+    repeatEnabled: true,
+    intervalSeconds: 60,
+    audioFile: '',
+  },
 }
 
 const AUDIO_TYPES = {
@@ -56,22 +73,54 @@ const AUDIO_TYPES = {
 }
 
 /**
- * Coerce the row config into the shape the client reads.
+ * Clamp a numeric field.
+ * @param value - raw value.
+ * @param fallback - default.
+ * @param min - lower bound.
+ * @param max - upper bound.
+ * @param integer - truncate to an integer.
+ * @returns the validated number.
+ */
+function numberInRange(value, fallback, min, max, integer) {
+  const number = integer ? Math.trunc(Number(value)) : Number(value)
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback
+}
+
+/**
+ * Coerce one group config.
+ * @param raw - raw group config.
+ * @param defaults - group defaults.
+ * @param legacy - optional legacy flat config used for the answer group.
+ * @returns normalized group config.
+ */
+function normalizeGroup(raw, defaults, legacy) {
+  const source = raw && typeof raw === 'object' ? raw : (legacy && typeof legacy === 'object' ? legacy : {})
+  return {
+    enabled: source.enabled !== undefined ? source.enabled !== false : (source.soundEnabled !== false),
+    volume: numberInRange(source.volume, defaults.volume, 0, 1, false),
+    ...(defaults.countdownEnabled !== undefined
+      ? {
+        countdownEnabled: source.countdownEnabled !== false,
+        countdownSeconds: numberInRange(source.countdownSeconds, defaults.countdownSeconds, 1, 300, true),
+      }
+      : {
+        repeatEnabled: source.repeatEnabled !== false,
+        intervalSeconds: numberInRange(source.intervalSeconds, defaults.intervalSeconds, 1, 3600, true),
+      }),
+    audioFile: typeof source.audioFile === 'string' ? source.audioFile.trim() : '',
+  }
+}
+
+/**
+ * Coerce the row config into the two-group shape.
  * @param config - raw Cordis row config.
  * @returns validated settings.
  */
-function normalize(config = {}) {
-  const volume = Number(config.volume)
-  const fallback = Number(config.fallbackWindowMs)
-  const countdownSeconds = Math.trunc(Number(config.countdownSeconds))
+export function normalize(config = {}) {
   return {
-    soundEnabled: config.soundEnabled !== false,
-    volume: Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : DEFAULTS.volume,
-    fallbackWindowMs: Number.isFinite(fallback) && fallback > 0 ? fallback : DEFAULTS.fallbackWindowMs,
-    countdownEnabled: config.countdownEnabled !== false,
-    countdownSeconds: Number.isFinite(countdownSeconds) && countdownSeconds >= 1 && countdownSeconds <= 300
-      ? countdownSeconds : DEFAULTS.countdownSeconds,
-    audioFile: typeof config.audioFile === 'string' ? config.audioFile.trim() : '',
+    fallbackWindowMs: numberInRange(config.fallbackWindowMs, DEFAULTS.fallbackWindowMs, 1, 2_147_483_647, false),
+    answer: normalizeGroup(config.answer, DEFAULTS.answer, config),
+    approval: normalizeGroup(config.approval, DEFAULTS.approval),
   }
 }
 
@@ -81,99 +130,170 @@ function dshHome() {
   return typeof fromEnv === 'string' && fromEnv !== '' ? fromEnv : join(homedir(), '.dsh')
 }
 
-/** @returns the directory holding imported audio files and preferences. */
-function customDir() {
-  return join(dshHome(), 'dsh-ask-timer')
+/** @returns the directory holding imported audio and preferences. */
+function dataDir() {
+  return join(dshHome(), DATA_DIR_NAME)
 }
 
-/** @returns file names of previously imported audio files. */
-async function customNames() {
-  try {
-    const names = await readdir(customDir())
-    return names.filter(name => name.startsWith('custom.'))
-  } catch {
-    return []
-  }
+/** @returns the pre-rename data directory. */
+function legacyDir() {
+  return join(dshHome(), LEGACY_DIR_NAME)
 }
 
-/** @returns absolute path of the imported file, or undefined. */
-async function importedFile() {
-  const names = await customNames()
-  return names.length === 0 ? undefined : join(customDir(), names[0])
+let migration
+
+/**
+ * Copy the legacy dsh-ask-timer data once when this plugin has no data directory.
+ * `custom.<ext>` becomes the answer group's `answer.<ext>`.
+ * @returns the one-time migration promise.
+ */
+function ensureMigrated() {
+  migration ??= (async () => {
+    try {
+      await stat(dataDir())
+      return
+    } catch {
+      // No new directory yet; migrate if the legacy one exists.
+    }
+    try {
+      const entries = await readdir(legacyDir())
+      await mkdir(dataDir(), { recursive: true })
+      for (const entry of entries) {
+        if (entry === 'settings.json') {
+          await copyFile(join(legacyDir(), entry), join(dataDir(), 'settings.json'))
+        } else if (entry.startsWith('custom.')) {
+          await copyFile(join(legacyDir(), entry), join(dataDir(), 'answer.' + entry.slice('custom.'.length)))
+        }
+      }
+    } catch {
+      // Nothing to migrate.
+    }
+  })()
+  return migration
 }
 
 /**
  * Read the preferences saved by the settings page.
- * @returns validated preferences (possibly empty).
+ * @returns validated preference groups.
  */
 async function readPreferences() {
+  await ensureMigrated()
   try {
-    const value = JSON.parse(await readFile(join(customDir(), 'settings.json'), 'utf8'))
-    const preferences = {}
-    if (value && typeof value === 'object') {
-      const volume = Number(value.volume)
-      if (Number.isFinite(volume)) preferences.volume = Math.min(1, Math.max(0, volume))
-      if (typeof value.soundEnabled === 'boolean') preferences.soundEnabled = value.soundEnabled
-      if (typeof value.countdownEnabled === 'boolean') preferences.countdownEnabled = value.countdownEnabled
-      const countdownSeconds = Math.trunc(Number(value.countdownSeconds))
-      if (Number.isFinite(countdownSeconds) && countdownSeconds >= 1 && countdownSeconds <= 300) {
-        preferences.countdownSeconds = countdownSeconds
-      }
+    const value = JSON.parse(await readFile(join(dataDir(), 'settings.json'), 'utf8'))
+    if (!value || typeof value !== 'object') return { answer: {}, approval: {} }
+    const answer = value.answer && typeof value.answer === 'object'
+      ? value.answer
+      : value
+    const approval = value.approval && typeof value.approval === 'object' ? value.approval : {}
+    const preferences = { answer: {}, approval: {} }
+    const volume = Number(answer.volume)
+    if (Number.isFinite(volume)) preferences.answer.volume = Math.min(1, Math.max(0, volume))
+    if (typeof answer.enabled === 'boolean') preferences.answer.enabled = answer.enabled
+    else if (typeof answer.soundEnabled === 'boolean') preferences.answer.enabled = answer.soundEnabled
+    if (typeof answer.countdownEnabled === 'boolean') preferences.answer.countdownEnabled = answer.countdownEnabled
+    const countdownSeconds = Math.trunc(Number(answer.countdownSeconds))
+    if (Number.isFinite(countdownSeconds) && countdownSeconds >= 1 && countdownSeconds <= 300) {
+      preferences.answer.countdownSeconds = countdownSeconds
+    }
+    const approvalVolume = Number(approval.volume)
+    if (Number.isFinite(approvalVolume)) preferences.approval.volume = Math.min(1, Math.max(0, approvalVolume))
+    if (typeof approval.enabled === 'boolean') preferences.approval.enabled = approval.enabled
+    if (typeof approval.repeatEnabled === 'boolean') preferences.approval.repeatEnabled = approval.repeatEnabled
+    const intervalSeconds = Math.trunc(Number(approval.intervalSeconds))
+    if (Number.isFinite(intervalSeconds) && intervalSeconds >= 1 && intervalSeconds <= 3600) {
+      preferences.approval.intervalSeconds = intervalSeconds
     }
     return preferences
   } catch {
-    return {}
+    return { answer: {}, approval: {} }
   }
 }
 
 /**
  * Merge a preference patch into the stored document.
- * @param patch - volume, soundEnabled, countdownEnabled and/or countdownSeconds.
+ * @param patch - nested answer/approval groups, or legacy flat answer keys.
  * @returns the stored preferences.
  */
 async function writePreferences(patch) {
+  await ensureMigrated()
   const current = await readPreferences()
-  const next = { ...current }
-  const volume = Number(patch.volume)
-  if (Number.isFinite(volume)) next.volume = Math.min(1, Math.max(0, volume))
-  if (typeof patch.soundEnabled === 'boolean') next.soundEnabled = patch.soundEnabled
-  if (typeof patch.countdownEnabled === 'boolean') next.countdownEnabled = patch.countdownEnabled
-  const countdownSeconds = Math.trunc(Number(patch.countdownSeconds))
-  if (Number.isFinite(countdownSeconds) && countdownSeconds >= 1 && countdownSeconds <= 300) {
-    next.countdownSeconds = countdownSeconds
+  const next = {
+    answer: { ...current.answer },
+    approval: { ...current.approval },
   }
-  await mkdir(customDir(), { recursive: true })
-  await writeFile(join(customDir(), 'settings.json'), JSON.stringify(next))
+  const answer = patch.answer && typeof patch.answer === 'object' ? patch.answer : patch
+  const approval = patch.approval && typeof patch.approval === 'object' ? patch.approval : {}
+  const volume = Number(answer.volume)
+  if (Number.isFinite(volume)) next.answer.volume = Math.min(1, Math.max(0, volume))
+  if (typeof answer.enabled === 'boolean') next.answer.enabled = answer.enabled
+  else if (typeof answer.soundEnabled === 'boolean') next.answer.enabled = answer.soundEnabled
+  if (typeof answer.countdownEnabled === 'boolean') next.answer.countdownEnabled = answer.countdownEnabled
+  const countdownSeconds = Math.trunc(Number(answer.countdownSeconds))
+  if (Number.isFinite(countdownSeconds) && countdownSeconds >= 1 && countdownSeconds <= 300) {
+    next.answer.countdownSeconds = countdownSeconds
+  }
+  const approvalVolume = Number(approval.volume)
+  if (Number.isFinite(approvalVolume)) next.approval.volume = Math.min(1, Math.max(0, approvalVolume))
+  if (typeof approval.enabled === 'boolean') next.approval.enabled = approval.enabled
+  if (typeof approval.repeatEnabled === 'boolean') next.approval.repeatEnabled = approval.repeatEnabled
+  const intervalSeconds = Math.trunc(Number(approval.intervalSeconds))
+  if (Number.isFinite(intervalSeconds) && intervalSeconds >= 1 && intervalSeconds <= 3600) {
+    next.approval.intervalSeconds = intervalSeconds
+  }
+  await mkdir(dataDir(), { recursive: true })
+  await writeFile(join(dataDir(), 'settings.json'), JSON.stringify(next))
   return next
 }
 
 /**
  * Row config overlaid with the settings page's saved preferences.
  * @param settings - normalized row settings.
- * @returns effective settings.
+ * @returns effective two-group settings.
  */
 async function effectiveSettings(settings) {
   const preferences = await readPreferences()
   return {
-    ...settings,
-    volume: preferences.volume === undefined ? settings.volume : preferences.volume,
-    soundEnabled: preferences.soundEnabled === undefined ? settings.soundEnabled : preferences.soundEnabled,
-    countdownEnabled: preferences.countdownEnabled === undefined ? settings.countdownEnabled : preferences.countdownEnabled,
-    countdownSeconds: preferences.countdownSeconds === undefined ? settings.countdownSeconds : preferences.countdownSeconds,
+    fallbackWindowMs: settings.fallbackWindowMs,
+    answer: { ...settings.answer, ...preferences.answer },
+    approval: { ...settings.approval, ...preferences.approval },
+  }
+}
+
+/** @param group - one of the two groups. @returns the group or throws. */
+function requireGroup(group) {
+  if (!GROUPS.includes(group)) throw new Error('unknown audio group')
+  return group
+}
+
+/**
+ * File names owned by one group. The answer group also treats legacy `custom.*`
+ * files as its own.
+ * @param group - answer or approval.
+ * @returns matching file names.
+ */
+async function groupFiles(group) {
+  try {
+    const names = await readdir(dataDir())
+    return names.filter(name => name.startsWith(group + '.')
+      || (group === 'answer' && name.startsWith('custom.')))
+  } catch {
+    return []
   }
 }
 
 /**
- * Resolve the audio file the plugin should serve: an imported file first, then
- * the row's configured path, then the packaged default.
- * @param settings - normalized settings.
- * @returns the file and where it came from, or undefined.
+ * Resolve the audio the group should play: imported, configured, then packaged.
+ * @param group - answer or approval.
+ * @param groupSettings - effective group settings.
+ * @returns the file and source, or undefined.
  */
-async function activeAudio(settings) {
-  const imported = await importedFile()
-  if (imported !== undefined) return { file: imported, source: 'imported' }
-  if (settings.audioFile !== '') {
-    const configured = isAbsolute(settings.audioFile) ? settings.audioFile : resolve(process.cwd(), settings.audioFile)
+async function activeAudio(group, groupSettings) {
+  const names = await groupFiles(group)
+  if (names.length > 0) return { file: join(dataDir(), names[0]), source: 'imported' }
+  if (groupSettings.audioFile !== '') {
+    const configured = isAbsolute(groupSettings.audioFile)
+      ? groupSettings.audioFile
+      : resolve(process.cwd(), groupSettings.audioFile)
     try {
       const info = await stat(configured)
       if (info.isFile()) return { file: configured, source: 'configured' }
@@ -182,10 +302,10 @@ async function activeAudio(settings) {
     }
   }
   try {
-    const info = await stat(BUNDLED_AUDIO)
-    if (info.isFile()) return { file: BUNDLED_AUDIO, source: 'bundled' }
+    const info = await stat(BUNDLED_AUDIO[group])
+    if (info.isFile()) return { file: BUNDLED_AUDIO[group], source: 'bundled' }
   } catch {
-    // The packaged default may be absent in a hand-trimmed install.
+    // A trimmed install may omit the packaged file.
   }
   return undefined
 }
@@ -198,13 +318,13 @@ function json(value) {
 }
 
 /**
- * Describe the effective audio and countdown settings for the client.
- * @param settings - normalized row settings.
- * @returns settings payload.
+ * Describe one group for the client.
+ * @param group - answer or approval.
+ * @param groupSettings - effective group settings.
+ * @returns group payload.
  */
-async function configPayload(settings) {
-  const effective = await effectiveSettings(settings)
-  const active = await activeAudio(effective)
+async function groupPayload(group, groupSettings) {
+  const active = await activeAudio(group, groupSettings)
   let audioVersion = ''
   let audioName = ''
   if (active !== undefined) {
@@ -217,28 +337,51 @@ async function configPayload(settings) {
     audioName = basename(active.file)
   }
   return {
-    version: 3,
-    soundEnabled: effective.soundEnabled,
-    volume: effective.volume,
-    fallbackWindowMs: effective.fallbackWindowMs,
-    countdownEnabled: effective.countdownEnabled,
-    countdownSeconds: effective.countdownSeconds,
+    enabled: groupSettings.enabled,
+    volume: groupSettings.volume,
+    ...(group === 'answer'
+      ? {
+        countdownEnabled: groupSettings.countdownEnabled,
+        countdownSeconds: groupSettings.countdownSeconds,
+      }
+      : {
+        repeatEnabled: groupSettings.repeatEnabled,
+        intervalSeconds: groupSettings.intervalSeconds,
+      }),
     hasAudio: active !== undefined,
-    audioUrl: AUDIO_PATH,
+    audioUrl: AUDIO_PATH + '?group=' + group,
     audioVersion,
     audioSource: active === undefined ? 'none' : active.source,
     audioName,
-    maxBytes: MAX_AUDIO_BYTES,
   }
 }
 
 /**
- * Stream the active chime bytes.
- * @param settings - normalized settings.
+ * Describe every effective setting for the client.
+ * @param settings - normalized row settings.
+ * @returns settings payload.
+ */
+async function configPayload(settings) {
+  await ensureMigrated()
+  const effective = await effectiveSettings(settings)
+  return {
+    version: 4,
+    fallbackWindowMs: effective.fallbackWindowMs,
+    maxBytes: MAX_AUDIO_BYTES,
+    answer: await groupPayload('answer', effective.answer),
+    approval: await groupPayload('approval', effective.approval),
+  }
+}
+
+/**
+ * Stream one group's active chime bytes.
+ * @param group - answer or approval.
+ * @param settings - normalized row settings.
  * @returns the audio response, or a 404 when no usable file exists.
  */
-async function audioResponse(settings) {
-  const active = await activeAudio(settings)
+async function audioResponse(group, settings) {
+  const effective = await effectiveSettings(settings)
+  const active = await activeAudio(group, effective[group])
   if (active === undefined) return new Response('no audio file configured', { status: 404 })
   try {
     const bytes = await readFile(active.file)
@@ -256,11 +399,12 @@ async function audioResponse(settings) {
 }
 
 /**
- * Store an uploaded audio file as the imported chime.
+ * Store an uploaded audio file for one group.
+ * @param group - answer or approval.
  * @param request - buffered upload request; `x-audio-name` carries the file name.
  * @returns a JSON outcome.
  */
-async function uploadAudio(request) {
+async function uploadAudio(group, request) {
   const rawName = request.headers.get('x-audio-name') ?? ''
   let fileName = ''
   try {
@@ -279,31 +423,34 @@ async function uploadAudio(request) {
   if (bytes.length === 0) return new Response('empty body', { status: 400 })
   if (bytes.length > MAX_AUDIO_BYTES) return new Response('audio file too large', { status: 413 })
   try {
-    await mkdir(customDir(), { recursive: true })
-    for (const name of await customNames()) await rm(join(customDir(), name), { force: true })
-    const stored = 'custom' + extension
-    await writeFile(join(customDir(), stored), bytes)
-    return json({ ok: true, name: stored, bytes: bytes.length })
+    await ensureMigrated()
+    await mkdir(dataDir(), { recursive: true })
+    for (const name of await groupFiles(group)) await rm(join(dataDir(), name), { force: true })
+    const stored = group + extension
+    await writeFile(join(dataDir(), stored), bytes)
+    return json({ ok: true, group, name: stored, bytes: bytes.length })
   } catch {
     return new Response('failed to store audio file', { status: 500 })
   }
 }
 
 /**
- * Remove imported audio files so the configured file or the packaged default wins.
+ * Remove one group's imported audio so config or the packaged default wins.
+ * @param group - answer or approval.
  * @returns a JSON outcome.
  */
-async function removeAudio() {
+async function removeAudio(group) {
   try {
-    for (const name of await customNames()) await rm(join(customDir(), name), { force: true })
-    return json({ ok: true })
+    await ensureMigrated()
+    for (const name of await groupFiles(group)) await rm(join(dataDir(), name), { force: true })
+    return json({ ok: true, group })
   } catch {
     return new Response('failed to remove audio file', { status: 500 })
   }
 }
 
 /**
- * Persist the settings page's live preferences.
+ * Persist the settings page's preferences.
  * @param request - buffered JSON request.
  * @param settings - normalized row settings.
  * @returns the merged settings payload.
@@ -329,6 +476,7 @@ async function updateSettings(request, settings) {
 /**
  * Build one test question. The id carries the question index and the foreground
  * window so the Client can draw the same absolute deadline the Host enforces.
+ * @param runId - per-run token.
  * @param index - 1-based question number.
  * @param windowMs - foreground window of this question.
  * @returns the question item.
@@ -340,7 +488,7 @@ function testQuestion(runId, index, windowMs) {
     '第 3 次模拟提问：最后一题。若每次提问都听到了提示音，请选“测试通过”。',
   ]
   return {
-    id: 'ask-timer-test-' + runId + '-' + String(index) + '-' + String(windowMs),
+    id: 'attention-test-' + runId + '-' + String(index) + '-' + String(windowMs),
     header: '倒计时测试 ' + String(index) + '/' + String(TEST_QUESTION_COUNT),
     question: prompts[index - 1],
     options: [
@@ -352,18 +500,19 @@ function testQuestion(runId, index, windowMs) {
 }
 
 /**
- * Ask three consecutive blocking questions that mimic an ordinary run_code ask:
- * no foreground timed wait, a Host-enforced absolute window, and no pause when
- * the user interacts. Each question can also be answered early.
+ * Ask three consecutive blocking questions that mimic an ordinary run_code ask.
  * @param ctx - host context carrying the user-question service.
  * @param invocation - command invocation with the live agent and signal.
- * @param settings - normalized row settings (for the countdown length).
+ * @param settings - normalized row settings.
  * @returns the command result shown in the conversation.
  */
-async function runTimerTest(ctx, invocation, settings) {
+async function runAttentionTest(ctx, invocation, settings) {
   try {
     const effective = await effectiveSettings(settings)
-    const windowMs = Math.min(MAX_TEST_WINDOW_MS, Math.max(MIN_TEST_WINDOW_MS, (effective.countdownSeconds + 5) * 1000))
+    const windowMs = Math.min(
+      MAX_TEST_WINDOW_MS,
+      Math.max(MIN_TEST_WINDOW_MS, (effective.answer.countdownSeconds + 5) * 1000),
+    )
     const results = []
     const runId = Date.now().toString(36) + (Math.random().toString(36).slice(2, 6) || 'x')
     for (let index = 1; index <= TEST_QUESTION_COUNT; index += 1) {
@@ -401,20 +550,20 @@ async function runTimerTest(ctx, invocation, settings) {
 }
 
 /**
- * Register the settings, audio, upload, removal, preferences, and test-command
- * surfaces.
+ * Register the settings, audio, preferences, and test-command surfaces.
  * @param ctx - Host context carrying Connection, Commands and UserQuestions.
  * @param config - row config.
  */
 export function apply(ctx, config = {}) {
   const settings = normalize(config)
+  void ensureMigrated()
   ctx.effect(function* () {
     yield ctx.commands.register({
-      name: 'ask-timer-test',
+      name: 'attention-test',
       description: '连续 3 次模拟正常提问的倒计时与提示音测试（无参数，直接发送）。',
-      handler: invocation => runTimerTest(ctx, invocation, settings),
+      handler: invocation => runAttentionTest(ctx, invocation, settings),
     })
-  }, 'ask-timer: command')
+  }, 'attention: command')
   ctx.effect(() => {
     const disposeConfig = ctx.connection.fetch.register({
       path: CONFIG_PATH,
@@ -427,10 +576,13 @@ export function apply(ctx, config = {}) {
       methods: ['GET', 'POST', 'DELETE'],
       requestBody: 'buffered',
       fetch: (request) => {
+        const url = new URL(request.url)
+        const group = url.searchParams.get('group')
+        if (!GROUPS.includes(group)) return new Response('unknown audio group', { status: 400 })
         const method = String(request.method || 'GET').toUpperCase()
-        if (method === 'POST') return uploadAudio(request)
-        if (method === 'DELETE') return removeAudio()
-        return audioResponse(settings)
+        if (method === 'POST') return uploadAudio(group, request)
+        if (method === 'DELETE') return removeAudio(group)
+        return audioResponse(group, settings)
       },
     })
     const disposeSettings = ctx.connection.fetch.register({
@@ -444,5 +596,5 @@ export function apply(ctx, config = {}) {
       void disposeAudio()
       void disposeSettings()
     }
-  }, 'ask-timer: routes')
+  }, 'attention: routes')
 }

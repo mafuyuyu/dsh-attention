@@ -1,27 +1,38 @@
-<p align="center"><img src="./icon.svg" width="72" alt="dsh-ask-timer icon"></p>
+<p align="center"><img src="./icon.svg" width="72" alt="dsh-attention icon"></p>
 
-# dsh-ask-timer
+# dsh-attention
 
 [简体中文](./README.md) · English
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.1.0-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.0-orange)](./package.json)
 
-**An answer countdown and chime plugin for [DeepSeek Harness](https://www.deepseek.com/harness/): show the remaining time while `ask_user_question` waits for you, tick once per second near the end, and import your own chime from the settings page.**
+**Answer and approval alerts for [DeepSeek Harness](https://www.deepseek.com/harness/): a countdown with last-seconds ticks while `ask_user_question` waits for you, and a repeating chime while a tool asks for permission approval, until you allow or reject it.**
 
-A DeepSeek Harness question has no "answer window" of its own. In PTC mode (`ops-ptc` / `ptc` presets) `ask_user_question` is a nested call inside a `run_code` program, and the answer window is exactly the program's time budget — when it runs out, the question is cancelled. This plugin turns that budget into a countdown in the Session header, plays one full chime when the question appears, and ticks once per second during the last `N` seconds. The chime file, countdown length, volume, and master switch are configurable in the settings page.
+A DeepSeek Harness question has no "answer window" of its own. In PTC mode (`ops-ptc` / `ptc` presets) `ask_user_question` is a nested call inside a `run_code` program, and the answer window is exactly the program's time budget — when it runs out, the question is cancelled.
+
+Approvals have the same problem: when bash, file writes, or another operation asks for permission while you are looking at a different Session or page, it is easy to miss.
+
+This plugin splits both "you are needed" moments into **two independent groups**:
+
+- **Answer alerts**: Session-header countdown, one chime when the question appears, and a per-second tick during the last `N` seconds.
+- **Approval alerts**: one immediate chime when an approval appears, then a reminder at the configured interval **until you click a button** (allow or reject). **No countdown is shown for approvals.**
+
+Each group has its own audio, volume, and switches.
 
 ## Features
 
 | Capability | What it does |
 | --- | --- |
-| **Header countdown** | Appears only while `ask_user_question` waits, showing the remaining `run_code` budget; an ordinary blocking question without a budget shows elapsed wait time instead of an invented deadline |
+| **Answer countdown** | Appears only while `ask_user_question` waits, showing the remaining `run_code` budget; an ordinary blocking question without a budget shows elapsed wait time instead of an invented deadline |
+| **Answer chime** | Plays once when the question appears; uses the packaged default or a file imported in the settings page |
 | **Last-seconds ticks** | During the last `countdownSeconds` seconds (default 10) a short tick plays once per second, with a higher pitch for the final 3 seconds |
-| **Question chime** | Plays once whenever a question appears; uses the packaged default audio or a file imported from the settings page |
-| **Keeps sounding across pages** | Switching to another Session or plugin page keeps the ticks going; switching back does not reset the countdown, does not replay the chime, and never doubles a tick — and there is no floating overlay covering other pages |
-| **Settings page** | Import/preview audio, volume slider, master chime switch, countdown-tick switch and length |
-| **Test command** | `/ask-timer-test` asks three consecutive questions that mimic a real ask: different content, one chime each, and an automatic cancel at the deadline |
+| **Approval reminder** | One immediate chime when a permission approval appears, then a repeat every `intervalSeconds` (default 60) until you allow or reject; repeat can be turned off so it chimes only once |
+| **Two independent groups** | Answer and approval each have their own audio, volume, and switch; answer also has a tick switch and length, approval a repeat switch and interval |
+| **Keeps sounding across pages** | Sounds are driven by module-level schedulers, so they continue after switching to another Session or plugin page; returning does not reset, replay, or double anything, and there is no floating overlay |
+| **Settings page** | One card per group: import/preview/restore, volume slider, switches and parameters |
+| **Test command** | `/attention-test` asks three consecutive questions that mimic a real ask: different content, one chime each, and an automatic cancel at the deadline |
 | **Local only** | Reads/writes only local settings and audio files: no network, no Session-log writes, no model tool schemas |
 
 ## Install
@@ -31,19 +42,19 @@ A DeepSeek Harness question has no "answer window" of its own. In PTC mode (`ops
 In DeepSeek Harness open **Plugins → Add plugin** and paste this repository URL:
 
 ```text
-https://github.com/mafuyuyu/dsh-ask-timer
+https://github.com/mafuyuyu/dsh-attention
 ```
 
-Then enable the **dsh-ask-timer** bundle on the same page (it is enabled by the install).
+Then enable the **dsh-attention** bundle on the same page (it is enabled by the install).
 
-> The plugin row id is `ask-timer`. If you already insert that row manually in your profile's `cordis.patch.yml`, do not also install the package as a bundle, or the same id will be inserted twice.
+> The plugin row id is `attention`. If you already insert that row manually in your profile's `cordis.patch.yml`, do not also install the package as a bundle, or the same id will be inserted twice.
 
 ### From a local directory
 
 Download the repository and paste its absolute directory path into **Add plugin**, for example:
 
 ```text
-D:\plugins\dsh-ask-timer
+D:\plugins\dsh-attention
 ```
 
 A local install links the directory: client changes apply on a page refresh, Host changes need a DSH restart.
@@ -52,46 +63,76 @@ A local install links the directory: client changes apply on a page refresh, Hos
 
 1. Add to `~/.dsh/profiles/desktop/package.json` under `dependencies`:
    ```json
-   "dsh-ask-timer": "link:D:/deepseek-worker/mark-plugins/dsh-ask-timer"
+   "dsh-attention": "link:D:/deepseek-worker/mark-plugins/dsh-attention"
    ```
-2. Run `pnpm install` in the profile directory.
+2. Run `pnpm install` in the profile directory (or link `node_modules/dsh-attention` to this directory).
 3. Append to `~/.dsh/profiles/desktop/cordis.patch.yml`:
    ```yaml
    - insert:
-       - id: ask-timer
-         name: 'dsh-ask-timer'
+       - id: attention
+         name: 'dsh-attention'
          config:
-           audioFile: ''
-           volume: 0.7
            fallbackWindowMs: 600000
-           countdownSeconds: 10
-           countdownEnabled: true
+           answer:
+             enabled: true
+             volume: 0.7
+             countdownEnabled: true
+             countdownSeconds: 10
+             audioFile: ''
+           approval:
+             enabled: true
+             volume: 0.7
+             repeatEnabled: true
+             intervalSeconds: 60
+             audioFile: ''
    ```
 4. Restart DSH once so both halves load.
 
+### Upgrading from dsh-ask-timer
+
+This plugin was formerly `dsh-ask-timer` (0.1.0, answer countdown only). To upgrade:
+
+- replace the profile dependency, bundle entry, and `cordis.patch.yml` row from `ask-timer` with `attention`;
+- data migrates automatically: on first read, if `~/.dsh/dsh-attention` does not exist, the old `~/.dsh/dsh-ask-timer/settings.json` is copied over and any `custom.<ext>` audio is renamed to the answer group's `answer.<ext>`;
+- the old flat preferences (`volume` / `soundEnabled` / `countdownSeconds`) are read as answer-group preferences; the approval group starts with defaults.
+
+Old GitHub repository URLs redirect to the new repository.
+
 ## Usage
 
-### Real questions
+### Answer alerts
 
 When the model asks you something through `ask_user_question`:
 
 1. A `⏳ 答题 m:ss` badge appears at the right of the Session header.
-2. The countdown comes from the running `run_code` call:
-   - the model's explicit `timeoutMs` when supplied;
-   - otherwise this plugin's `fallbackWindowMs` (default 600000, i.e. 10 minutes).
-3. The full chime plays once when the question appears.
+2. The countdown comes from the running `run_code` call: the model's explicit `timeoutMs` when supplied, otherwise `fallbackWindowMs` (default 600000, i.e. 10 minutes).
+3. The answer chime plays once when the question appears.
 4. During the last `countdownSeconds` seconds a short tick plays once per second.
 5. At zero the `run_code` budget cancels the question — that is the real behaviour; answering hides the badge immediately.
 6. Click the badge to replay the chime.
 
-For a DSH timed question (`mode: timed`) the badge reuses the question card's own foreground window; by DSH design that window pauses while you focus or select, and resumes when you leave.
+For a DSH timed question (`mode: timed`) the badge reuses the question card's own foreground window; by DSH design it pauses while you focus or select and resumes when you leave.
+
+### Approval alerts
+
+When bash, a file write, a plugin build, or another operation asks for permission:
+
+1. The approval chime plays once immediately (independent of the answer group).
+2. If **repeat** is on, it plays again every `intervalSeconds` seconds until you allow or reject.
+3. Approvals show no countdown and never create a floating overlay.
+4. Reminders continue even while you are in another Session or plugin page, and stop when the approval settles.
+
+Approval reminders use DSH's global pending-interaction state, so:
+
+- they target **permission approvals** only; plan review (plan-review) stays with the answer group's countdown and chime;
+- when a Session has both a pending question and a pending approval, DSH exposes only the highest-precedence interaction, so the other reminder can be delayed briefly.
 
 ### Test command
 
-Type this in the composer (no arguments — do not append a number):
+Type this in the composer (no arguments):
 
 ```text
-/ask-timer-test
+/attention-test
 ```
 
 It asks **three consecutive questions**, one at a time, with different content, and **each question plays one chime**. Every question mimics an ordinary `run_code` ask:
@@ -103,41 +144,38 @@ It asks **three consecutive questions**, one at a time, with different content, 
 
 When all three finish, the command reports a summary (answered / timed out / cancelled).
 
-> A slash command followed by text is not treated as command input by the composer; this command takes no arguments, so just send `/ask-timer-test`.
+> This command tests the **answer group**; preview the approval chime with **Preview** on the settings page.
 
 ### Settings page
 
 Both entries open the same settings:
 
-- **Settings → 答题倒计时 / Ask timer** (a standalone page in the Settings panel);
-- **Settings → Plugins → dsh-ask-timer → Configure** (the row page, when the row is listed).
+- **Settings → 答题与审批提醒 / Attention** (a standalone page in the Settings panel);
+- **Settings → Plugins → dsh-attention → Configure** (the row page, when the row is listed).
 
-The page contains:
+The page has two independent cards:
 
-- **Choose audio file**: a native file picker for mp3 / wav / ogg / m4a / flac / webm, up to 8 MB;
-- **Preview**: plays the effective audio (imported → `audioFile` config → packaged `assets/default.wav`), even when the master switch is off;
-- **Volume**: 0–100% slider, applied live and saved automatically;
-- **Enable chime**: master switch;
-- **Countdown ticks**: switch plus a "last N seconds" field (1–300);
-- **Use built-in**: removes the imported file and falls back to the configured or packaged audio.
+**Answer alerts**
+
+- choose audio file / preview / restore built-in;
+- volume slider;
+- enable chime;
+- countdown-tick switch + last N seconds (1–300).
+
+**Approval alerts**
+
+- choose audio file / preview / restore built-in;
+- volume slider;
+- enable chime;
+- repeat switch + interval (1–3600 seconds, default 60).
 
 Storage:
 
-- imported audio: `$DSH_HOME/dsh-ask-timer/custom.<ext>` (default `C:\Users\<you>\.dsh\dsh-ask-timer`);
-- volume / switches / countdown: `settings.json` in the same directory, overriding the YAML keys.
+- answer audio: `$DSH_HOME/dsh-attention/answer.<ext>`;
+- approval audio: `$DSH_HOME/dsh-attention/approval.<ext>`;
+- both preference groups: `settings.json` in the same directory, overriding YAML row keys.
 
 Browsers require one click in the page before audio may play; if Preview is silent, click the page once and try again.
-
-## Behaviour and limits
-
-- The header badge shows only the **current Session's** pending question; after switching Sessions no badge is shown, but a question with a known deadline keeps ticking.
-- There is no floating overlay, so nothing covers other pages.
-- An ordinary blocking question with no `run_code` budget shows "waiting m:ss" instead of a deadline.
-- A timed question's foreground window pauses while focused/selected — that is DSH's behaviour, not this plugin's pause; it resumes from the remaining time.
-- Background tabs throttle timers; ticks may be imprecise when the whole DSH window is minimised. Switching pages inside the app is unaffected.
-- Audio type is derived from the file extension; unsupported extensions are rejected by the Host (415), and files over 8 MB get 413.
-- The plugin never modifies the question card or the `ask_user_question` answer flow.
-- Every slot component is wrapped in an error boundary: a rendering failure hides that control instead of breaking the UI.
 
 ## Configuration
 
@@ -145,23 +183,31 @@ Plugin row keys (in `cordis.patch.yml` or the plugin page's advanced config):
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `audioFile` | `''` | Optional absolute path to a chime file. A file imported in the settings page wins over it; when neither exists the packaged `assets/default.wav` is used. |
-| `volume` | `0.7` | Volume 0–1 (the settings slider overrides it). |
-| `soundEnabled` | `true` | Master chime switch (the settings page overrides it). |
-| `countdownEnabled` | `true` | Countdown-tick switch (the settings page overrides it). |
-| `countdownSeconds` | `10` | Tick once per second during the last N seconds, 1–300 (the settings page overrides it). |
 | `fallbackWindowMs` | `600000` | Answer window used when the model does not pass `timeoutMs` to `run_code`; keep it in sync with `ptc-runtime`'s `timeoutMs`. |
+| `answer.enabled` | `true` | Answer chime master switch. |
+| `answer.volume` | `0.7` | Answer volume 0–1. |
+| `answer.countdownEnabled` | `true` | Last-seconds tick switch. |
+| `answer.countdownSeconds` | `10` | Tick once per second during the last N seconds, 1–300. |
+| `answer.audioFile` | `''` | Optional absolute path to answer audio; an imported file wins, then this, then the packaged `assets/default.wav`. |
+| `approval.enabled` | `true` | Approval chime master switch. |
+| `approval.volume` | `0.7` | Approval volume 0–1. |
+| `approval.repeatEnabled` | `true` | Repeat the approval chime at the interval after the first one. |
+| `approval.intervalSeconds` | `60` | Repeat interval, 1–3600 seconds. |
+| `approval.audioFile` | `''` | Optional absolute path to approval audio; an imported file wins, then this, then the packaged `assets/approval.wav`. |
+
+Preferences saved on the settings page override the row keys per group.
 
 ## Layout
 
 ```text
-dsh-ask-timer/
-├─ index.js                 # Host: settings/audio/preference routes + /ask-timer-test
-├─ client.js                # Browser: header countdown, tick scheduler, settings page
-├─ cordis.patch.yml         # row inserted when installed as a bundle
-├─ assets/default.wav       # packaged default chime
-├─ test/host-routes.test.mjs# Host route unit test
-├─ icon.svg
+dsh-attention/
+├─ index.js                  # Host: two-group settings/audio routes + /attention-test
+├─ client.js                 # Browser: answer countdown, approval scheduler, settings page
+├─ cordis.patch.yml          # row inserted when installed as a bundle
+├─ assets/default.wav        # packaged answer chime
+├─ assets/approval.wav       # packaged approval chime
+├─ test/host-routes.test.mjs # Host route unit test
+├─ icon.svg                  # bell + question mark
 ├─ README.md / README_EN.md
 └─ LICENSE
 ```
@@ -178,10 +224,11 @@ Client changes apply on a page refresh; Host changes (`index.js`, command regist
 
 ## Privacy and security
 
-- The Host exposes four **authenticated**, same-origin routes: `GET /api/ask-timer/config`, `GET/POST/DELETE /api/ask-timer/audio`, and `PUT /api/ask-timer/settings`.
+- The Host exposes four **authenticated**, same-origin routes: `GET /api/attention/config`, `GET/POST/DELETE /api/attention/audio`, and `PUT /api/attention/settings`.
 - It reads only the configured audio file or the file imported from the settings page; it never accepts arbitrary paths and makes no external network requests.
-- Settings and imported audio live under `$DSH_HOME/dsh-ask-timer/`; the plugin writes no Session logs, makes no model requests, and registers no model tools (`/ask-timer-test` is a human-triggered command).
-- Removing the imported audio or uninstalling the plugin does not affect existing Sessions.
+- Approval reminders read only the `kind` and `key` of the global pending interaction; they never read or log the approval content or tool arguments.
+- Settings and imported audio live under `$DSH_HOME/dsh-attention/`; the plugin writes no Session logs, makes no model requests, and registers no model tools (`/attention-test` is a human-triggered command).
+- Removing imported audio or uninstalling the plugin does not affect existing Sessions; the dsh-ask-timer migration copies old data once on first read.
 
 ## License
 

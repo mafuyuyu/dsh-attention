@@ -1,7 +1,19 @@
-# Bundle layer for dsh-ask-timer: insert the one plugin row.
-# A profile that installs this package through dsh.profile.bundles uses this file;
-# a profile that mounts the row directly in its own cordis.patch.yml must NOT also
-# list the package as a bundle (one insert per id).
+# dsh-attention：答题倒计时 + 权限审批提醒。
+# 安装为 bundle 时由插件管理器读取本文件插入插件行。
 - insert:
-    - id: ask-timer
-      name: 'dsh-ask-timer'
+    - id: attention
+      name: 'dsh-attention'
+      config:
+        fallbackWindowMs: 600000
+        answer:
+          enabled: true
+          volume: 0.7
+          countdownEnabled: true
+          countdownSeconds: 10
+          audioFile: ''
+        approval:
+          enabled: true
+          volume: 0.7
+          repeatEnabled: true
+          intervalSeconds: 60
+          audioFile: ''
