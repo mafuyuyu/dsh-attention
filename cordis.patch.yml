@@ -11,9 +11,11 @@
           countdownEnabled: true
           countdownSeconds: 10
           audioFile: ''
+          systemNotification: false
         approval:
           enabled: true
           volume: 0.7
           repeatEnabled: true
           intervalSeconds: 60
           audioFile: ''
+          systemNotification: false

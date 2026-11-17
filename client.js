@@ -22,6 +22,7 @@ window.__ModuleLoader__.load({
         volume: 0.7,
         countdownEnabled: true,
         countdownSeconds: 10,
+        systemNotification: false,
         hasAudio: false,
         audioUrl: '/api/attention/audio?group=answer',
         audioVersion: '',
@@ -33,6 +34,7 @@ window.__ModuleLoader__.load({
         volume: 0.7,
         repeatEnabled: true,
         intervalSeconds: 60,
+        systemNotification: false,
         hasAudio: false,
         audioUrl: '/api/attention/audio?group=approval',
         audioVersion: '',
@@ -83,6 +85,8 @@ window.__ModuleLoader__.load({
     let testTicker
     /** Active approval reminders keyed by session + interaction key. */
     const approvalReminders = new Map()
+    /** Pending system notifications keyed by session + interaction key. */
+    const pendingNotifications = new Map()
 
     /** Notify the settings page after a settings change or config refresh. */
     function bumpSettings() {
@@ -197,7 +201,15 @@ window.__ModuleLoader__.load({
           approvalRepeatHint: '关闭后只在审批出现时响一次。',
           approvalInterval: '提醒间隔',
           secondsUnit: '秒',
-          note: '支持 mp3 / wav / ogg / m4a / flac / webm，最大 8 MB。两组设置分别保存；导入音频、音量与开关保存在 DSH 数据目录。浏览器要求页面先有一次点击才允许发声。',
+          systemNotify: '系统气泡通知',
+          systemNotifyHint: '只提示“有提问或权限审批在等待”，不显示问题或审批内容。',
+          notifyQuestionTitle: '答题等待中',
+          notifyQuestionBody: '有一个问题在等待你回答',
+          notifyReviewTitle: '计划审核等待中',
+          notifyReviewBody: '有一个计划在等待你审核',
+          notifyApprovalTitle: '权限审批等待中',
+          notifyApprovalBody: '有工具正在等待你的授权',
+          note: '支持 mp3 / wav / ogg / m4a / flac / webm，最大 8 MB。两组设置分别保存；导入音频、音量与开关保存在 DSH 数据目录。浏览器要求页面先有一次点击才允许发声；系统气泡通知还需要操作系统允许 DSH 的通知。',
         }
         : {
           answerLabel: 'Answer',
@@ -236,7 +248,15 @@ window.__ModuleLoader__.load({
           approvalRepeatHint: 'When off, the approval chimes once when it appears.',
           approvalInterval: 'Interval',
           secondsUnit: 's',
-          note: 'mp3 / wav / ogg / m4a / flac / webm, up to 8 MB. The two groups are stored separately in the DSH data directory. Browsers require one click before audio can play.',
+          systemNotify: 'System notification',
+          systemNotifyHint: 'Only says a question or approval is waiting; never shows question or approval content.',
+          notifyQuestionTitle: 'Answer needed',
+          notifyQuestionBody: 'A question is waiting for your answer',
+          notifyReviewTitle: 'Review needed',
+          notifyReviewBody: 'A plan is waiting for your review',
+          notifyApprovalTitle: 'Approval needed',
+          notifyApprovalBody: 'A tool is waiting for your permission',
+          note: 'mp3 / wav / ogg / m4a / flac / webm, up to 8 MB. The two groups are stored separately in the DSH data directory. Browsers require one click before audio can play; system notifications also need the operating system to allow DSH notifications.',
         }
     }
 
@@ -308,6 +328,105 @@ window.__ModuleLoader__.load({
         }
       }
       beepGroup(group)
+    }
+
+    /**
+     * Ask for notification permission once, ideally from a user gesture.
+     * @returns the permission promise, or undefined when notifications are unavailable.
+     */
+    function ensureNotificationPermission() {
+      try {
+        if (typeof Notification === 'undefined') return undefined
+        if (Notification.permission === 'granted' || Notification.permission === 'denied') {
+          return Promise.resolve(Notification.permission)
+        }
+        return Notification.requestPermission()
+      } catch {
+        return undefined
+      }
+    }
+
+    /**
+     * Show one generic system bubble; question and approval content is never included.
+     * @param key - stable pending-interaction identity.
+     * @param kind - question, plan-review or approval.
+     */
+    function showSystemNotification(key, kind) {
+      try {
+        if (typeof Notification === 'undefined') return
+        if (Notification.permission === 'denied') return
+        if (Notification.permission === 'default') {
+          const pending = ensureNotificationPermission()
+          if (pending && typeof pending.then === 'function') {
+            pending.then((permission) => {
+              if (permission === 'granted' && !pendingNotifications.has(key)) showSystemNotification(key, kind)
+            }, () => {})
+          }
+          return
+        }
+        const labels = copy()
+        const title = kind === 'approval' ? labels.notifyApprovalTitle
+          : kind === 'plan-review' ? labels.notifyReviewTitle : labels.notifyQuestionTitle
+        const body = kind === 'approval' ? labels.notifyApprovalBody
+          : kind === 'plan-review' ? labels.notifyReviewBody : labels.notifyQuestionBody
+        const notification = new Notification(title, {
+          body,
+          silent: true,
+          requireInteraction: true,
+          tag: 'dsh-attention:' + key,
+        })
+        notification.onclick = () => {
+          try { window.focus() } catch {
+            // The OS still activates DSH from the notification click.
+          }
+          try { notification.close() } catch {
+            // Already dismissed.
+          }
+          pendingNotifications.delete(key)
+        }
+        pendingNotifications.set(key, notification)
+      } catch {
+        // Notifications are optional; audio reminders keep working.
+      }
+    }
+
+    /**
+     * Close one pending system bubble.
+     * @param key - stable pending-interaction identity.
+     */
+    function closeSystemNotification(key) {
+      const notification = pendingNotifications.get(key)
+      if (notification === undefined) return
+      pendingNotifications.delete(key)
+      try { notification.close() } catch {
+        // Already dismissed.
+      }
+    }
+
+    /**
+     * Show or close system bubbles for the current pending interactions.
+     * Only the interaction kind is read; question and approval content is never touched.
+     * @param statuses - Session status map from useSessionStatus.
+     */
+    function syncSystemNotifications(statuses) {
+      const active = new Map()
+      if (statuses && typeof statuses.forEach === 'function') {
+        statuses.forEach((status, sessionId) => {
+          const pending = status && status.pendingInteraction
+          if (!pending) return
+          const kind = pending.kind
+          if (kind !== 'question' && kind !== 'plan-review' && kind !== 'approval') return
+          const group = kind === 'approval' ? 'approval' : 'answer'
+          if (groupSettings(group).systemNotification !== true) return
+          active.set(String(sessionId) + ':' + String(pending.key), kind)
+        })
+      }
+      for (const key of [...pendingNotifications.keys()]) {
+        if (!active.has(key)) closeSystemNotification(key)
+      }
+      for (const [key, kind] of active) {
+        if (!pendingNotifications.has(key)) showSystemNotification(key, kind)
+      }
     }
 
     /** Short countdown tick, once per second near the deadline. */
@@ -715,17 +834,21 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Headless approval watcher: sees every Session's pending interaction and
-     * keeps the approval reminder timers running while any approval is open.
+     * Headless attention watcher: sees every Session's pending interaction, keeps
+     * the approval reminder timers running, and shows or closes system bubbles.
      * @param props - global slot props (useSessionStatus).
      * @returns null.
      */
-    function ApprovalWatcher(props) {
+    function AttentionWatcher(props) {
       const version = React.useSyncExternalStore(subscribeSettings, settingsSnapshot)
       const statuses = props.useSessionStatus(snapshot => snapshot)
       React.useEffect(() => {
         syncApprovalReminders(statuses)
+        syncSystemNotifications(statuses)
       }, [statuses, version])
+      React.useEffect(() => () => {
+        for (const key of [...pendingNotifications.keys()]) closeSystemNotification(key)
+      }, [])
       return null
     }
 
@@ -970,6 +1093,24 @@ window.__ModuleLoader__.load({
             ),
             h('span', { style: hintStyle }, isAnswer ? t.answerEnabledHint : t.approvalEnabledHint),
           ),
+          h('div', { style: rowStyle },
+            h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--dsw-alias-label-primary)', cursor: 'pointer' } },
+              h('input', {
+                type: 'checkbox',
+                checked: target.systemNotification === true,
+                onChange: (event) => {
+                  const next = event.target.checked === true
+                  groupSettings(group).systemNotification = next
+                  if (next) void ensureNotificationPermission()
+                  bumpSettings()
+                  persistNow(group, { systemNotification: next })
+                },
+                style: { width: '16px', height: '16px', accentColor: 'var(--dsw-alias-brand-primary)' },
+              }),
+              t.systemNotify,
+            ),
+            h('span', { style: hintStyle }, t.systemNotifyHint),
+          ),
           extra,
         )
       }
@@ -1035,8 +1176,8 @@ window.__ModuleLoader__.load({
         }, 'attention: question chime')
         ctx.slots.inject('shell.overlay', () =>
           ctx.slots.register(
-            { name: 'shell.overlay', id: 'attention.approval-watcher', order: 25 },
-            ApprovalWatcher,
+            { name: 'shell.overlay', id: 'attention.watcher', order: 25 },
+            AttentionWatcher,
           ))
         ctx.slots.inject('conversation.session.header.utilities', () =>
           ctx.slots.register(

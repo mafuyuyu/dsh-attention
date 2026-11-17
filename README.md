@@ -6,7 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.1-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.2-orange)](./package.json)
 
 **面向 [DeepSeek Harness](https://www.deepseek.com/harness/) 的答题与审批提醒插件：等待你回答 `ask_user_question` 时显示倒计时并在最后几秒滴答；工具请求权限审批时按间隔播放提醒音，直到你批准或拒绝。**
 
@@ -30,6 +30,7 @@ DeepSeek Harness 的提问本身没有“回答窗口”。到了 PTC 模式（`
 | **最后 N 秒滴答** | 剩余时间进入最后 `countdownSeconds` 秒（默认 10）后每秒响一次，最后 3 秒音调更高 |
 | **权限审批提醒** | 审批出现时立即响一次，按 `intervalSeconds`（默认 60 秒）重复提醒，直到你批准或拒绝；可关闭重复，只在出现时响一次 |
 | **两组独立** | 答题与审批分别设置音频、音量、开关；答题另有倒计时开关与秒数，审批另有重复开关与间隔 |
+| **系统气泡通知** | 答题与审批都可选开启：在系统通知中心弹出“有提问/审批在等待”的通用提示，不显示问题或审批内容；默认关闭 |
 | **切页继续发声** | 声音由模块级调度器驱动，切到其它会话或插件页后继续；切回来不重置、不重播、每秒只响一下，也没有浮动框 |
 | **设置页** | 两组各一张卡片：导入/预览/恢复内置、音量滑块、开关与参数 |
 | **测试命令** | `/attention-test` 连续发起 3 个模拟真实提问的测试题，每题内容不同、都会响一次提示音，到点自动取消 |
@@ -160,14 +161,16 @@ timed 提问（`mode: timed`）直接使用问题卡片自带的前台窗口；�
 - 选择音频文件 / 播放预览 / 恢复内置；
 - 音量滑块；
 - 启用提示音；
-- 倒计时音效开关 + 最后几秒（1–300）。
+- 倒计时音效开关 + 最后几秒（1–300）；
+- 系统气泡通知（默认关闭，只提示有提问在等待，不显示问题内容）。
 
 **权限审批提醒**
 
 - 选择音频文件 / 播放预览 / 恢复内置；
 - 音量滑块；
 - 启用提示音；
-- 重复提醒开关 + 提醒间隔（1–3600 秒，默认 60）。
+- 重复提醒开关 + 提醒间隔（1–3600 秒，默认 60）；
+- 系统气泡通知（默认关闭，只提示有审批在等待，不显示审批内容）。
 
 保存位置：
 
@@ -175,7 +178,7 @@ timed 提问（`mode: timed`）直接使用问题卡片自带的前台窗口；�
 - 导入的审批音频：`$DSH_HOME/dsh-attention/approval.<ext>`；
 - 两组偏好：同目录 `settings.json`，优先级高于 YAML 配置里的同名键。
 
-浏览器要求页面先有一次点击才允许发声；如果预览没声音，先点一下页面再试。
+浏览器要求页面先有一次点击才允许发声；如果预览没声音，先点一下页面再试。系统气泡通知还需要操作系统允许 DSH 的通知。
 
 ## 配置
 
@@ -189,11 +192,13 @@ timed 提问（`mode: timed`）直接使用问题卡片自带的前台窗口；�
 | `answer.countdownEnabled` | `true` | 最后 N 秒滴答开关。 |
 | `answer.countdownSeconds` | `10` | 最后几秒每秒滴答一次，1–300。 |
 | `answer.audioFile` | `''` | 可选：答题提示音频的绝对路径；设置页导入的文件优先，都没有时用插件自带的 `assets/default.wav`。 |
+| `answer.systemNotification` | `false` | 是否在系统通知中心弹出答题气泡（只提示有提问在等待，不显示问题内容）。 |
 | `approval.enabled` | `true` | 审批提示音总开关。 |
 | `approval.volume` | `0.7` | 审批音量 0–1。 |
 | `approval.repeatEnabled` | `true` | 审批出现后是否按间隔重复提醒。 |
 | `approval.intervalSeconds` | `60` | 重复提醒间隔，1–3600 秒。 |
 | `approval.audioFile` | `''` | 可选：审批提示音频的绝对路径；设置页导入的文件优先，都没有时用插件自带的 `assets/approval.wav`。 |
+| `approval.systemNotification` | `false` | 是否在系统通知中心弹出审批气泡（只提示有审批在等待，不显示审批内容）。 |
 
 设置页保存的偏好会覆盖行配置里的同名键（每组独立覆盖）。
 

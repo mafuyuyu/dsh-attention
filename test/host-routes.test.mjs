@@ -60,6 +60,9 @@ if (first.answer.countdownEnabled !== true || first.answer.countdownSeconds !== 
 if (first.approval.volume !== 0.7 || first.approval.intervalSeconds !== 30 || first.approval.repeatEnabled !== true) {
   throw new Error('approval config defaults: ' + JSON.stringify(first.approval))
 }
+if (first.answer.systemNotification !== false || first.approval.systemNotification !== false) {
+  throw new Error('system notifications must default off: ' + JSON.stringify(first))
+}
 
 const wav = Buffer.from('RIFF....WAVEfmt ')
 const upload = await audioFetch(new Request(base + '?group=answer', {
@@ -93,16 +96,16 @@ const put = await settingsFetch(new Request('http://local/api/attention/settings
   method: 'PUT',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({
-    answer: { volume: 0.25, enabled: false, countdownEnabled: false, countdownSeconds: 5 },
-    approval: { volume: 0.4, repeatEnabled: false, intervalSeconds: 7 },
+    answer: { volume: 0.25, enabled: false, countdownEnabled: false, countdownSeconds: 5, systemNotification: true },
+    approval: { volume: 0.4, repeatEnabled: false, intervalSeconds: 7, systemNotification: true },
   }),
 }))
 if (put.status !== 200) throw new Error('settings put failed: ' + put.status + ' ' + await put.text())
 const saved = await config()
-if (saved.answer.volume !== 0.25 || saved.answer.enabled !== false || saved.answer.countdownEnabled !== false || saved.answer.countdownSeconds !== 5) {
+if (saved.answer.volume !== 0.25 || saved.answer.enabled !== false || saved.answer.countdownEnabled !== false || saved.answer.countdownSeconds !== 5 || saved.answer.systemNotification !== true) {
   throw new Error('answer preferences not persisted: ' + JSON.stringify(saved.answer))
 }
-if (saved.approval.volume !== 0.4 || saved.approval.repeatEnabled !== false || saved.approval.intervalSeconds !== 7) {
+if (saved.approval.volume !== 0.4 || saved.approval.repeatEnabled !== false || saved.approval.intervalSeconds !== 7 || saved.approval.systemNotification !== true) {
   throw new Error('approval preferences not persisted: ' + JSON.stringify(saved.approval))
 }
 

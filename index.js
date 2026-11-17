@@ -50,6 +50,7 @@ export const DEFAULTS = {
     countdownEnabled: true,
     countdownSeconds: 10,
     audioFile: '',
+    systemNotification: false,
   },
   approval: {
     enabled: true,
@@ -57,6 +58,7 @@ export const DEFAULTS = {
     repeatEnabled: true,
     intervalSeconds: 60,
     audioFile: '',
+    systemNotification: false,
   },
 }
 
@@ -108,6 +110,7 @@ function normalizeGroup(raw, defaults, legacy) {
         intervalSeconds: numberInRange(source.intervalSeconds, defaults.intervalSeconds, 1, 3600, true),
       }),
     audioFile: typeof source.audioFile === 'string' ? source.audioFile.trim() : '',
+    systemNotification: source.systemNotification === true,
   }
 }
 
@@ -191,6 +194,7 @@ async function readPreferences() {
     if (typeof answer.enabled === 'boolean') preferences.answer.enabled = answer.enabled
     else if (typeof answer.soundEnabled === 'boolean') preferences.answer.enabled = answer.soundEnabled
     if (typeof answer.countdownEnabled === 'boolean') preferences.answer.countdownEnabled = answer.countdownEnabled
+    if (typeof answer.systemNotification === 'boolean') preferences.answer.systemNotification = answer.systemNotification
     const countdownSeconds = Math.trunc(Number(answer.countdownSeconds))
     if (Number.isFinite(countdownSeconds) && countdownSeconds >= 1 && countdownSeconds <= 300) {
       preferences.answer.countdownSeconds = countdownSeconds
@@ -199,6 +203,7 @@ async function readPreferences() {
     if (Number.isFinite(approvalVolume)) preferences.approval.volume = Math.min(1, Math.max(0, approvalVolume))
     if (typeof approval.enabled === 'boolean') preferences.approval.enabled = approval.enabled
     if (typeof approval.repeatEnabled === 'boolean') preferences.approval.repeatEnabled = approval.repeatEnabled
+    if (typeof approval.systemNotification === 'boolean') preferences.approval.systemNotification = approval.systemNotification
     const intervalSeconds = Math.trunc(Number(approval.intervalSeconds))
     if (Number.isFinite(intervalSeconds) && intervalSeconds >= 1 && intervalSeconds <= 3600) {
       preferences.approval.intervalSeconds = intervalSeconds
@@ -228,6 +233,7 @@ async function writePreferences(patch) {
   if (typeof answer.enabled === 'boolean') next.answer.enabled = answer.enabled
   else if (typeof answer.soundEnabled === 'boolean') next.answer.enabled = answer.soundEnabled
   if (typeof answer.countdownEnabled === 'boolean') next.answer.countdownEnabled = answer.countdownEnabled
+  if (typeof answer.systemNotification === 'boolean') next.answer.systemNotification = answer.systemNotification
   const countdownSeconds = Math.trunc(Number(answer.countdownSeconds))
   if (Number.isFinite(countdownSeconds) && countdownSeconds >= 1 && countdownSeconds <= 300) {
     next.answer.countdownSeconds = countdownSeconds
@@ -236,6 +242,7 @@ async function writePreferences(patch) {
   if (Number.isFinite(approvalVolume)) next.approval.volume = Math.min(1, Math.max(0, approvalVolume))
   if (typeof approval.enabled === 'boolean') next.approval.enabled = approval.enabled
   if (typeof approval.repeatEnabled === 'boolean') next.approval.repeatEnabled = approval.repeatEnabled
+  if (typeof approval.systemNotification === 'boolean') next.approval.systemNotification = approval.systemNotification
   const intervalSeconds = Math.trunc(Number(approval.intervalSeconds))
   if (Number.isFinite(intervalSeconds) && intervalSeconds >= 1 && intervalSeconds <= 3600) {
     next.approval.intervalSeconds = intervalSeconds
@@ -339,6 +346,7 @@ async function groupPayload(group, groupSettings) {
   return {
     enabled: groupSettings.enabled,
     volume: groupSettings.volume,
+    systemNotification: groupSettings.systemNotification === true,
     ...(group === 'answer'
       ? {
         countdownEnabled: groupSettings.countdownEnabled,

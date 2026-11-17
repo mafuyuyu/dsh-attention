@@ -6,7 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.1-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.2-orange)](./package.json)
 
 **Answer and approval alerts for [DeepSeek Harness](https://www.deepseek.com/harness/): a countdown with last-seconds ticks while `ask_user_question` waits for you, and a repeating chime while a tool asks for permission approval, until you allow or reject it.**
 
@@ -30,6 +30,7 @@ Each group has its own audio, volume, and switches.
 | **Last-seconds ticks** | During the last `countdownSeconds` seconds (default 10) a short tick plays once per second, with a higher pitch for the final 3 seconds |
 | **Approval reminder** | One immediate chime when a permission approval appears, then a repeat every `intervalSeconds` (default 60) until you allow or reject; repeat can be turned off so it chimes only once |
 | **Two independent groups** | Answer and approval each have their own audio, volume, and switch; answer also has a tick switch and length, approval a repeat switch and interval |
+| **System notifications** | Optional for both groups: an OS-level bubble says a question or approval is waiting, never its content; off by default |
 | **Keeps sounding across pages** | Sounds are driven by module-level schedulers, so they continue after switching to another Session or plugin page; returning does not reset, replay, or double anything, and there is no floating overlay |
 | **Settings page** | One card per group: import/preview/restore, volume slider, switches and parameters |
 | **Test command** | `/attention-test` asks three consecutive questions that mimic a real ask: different content, one chime each, and an automatic cancel at the deadline |
@@ -160,14 +161,16 @@ The page has two independent cards:
 - choose audio file / preview / restore built-in;
 - volume slider;
 - enable chime;
-- countdown-tick switch + last N seconds (1–300).
+- countdown-tick switch + last N seconds (1–300);
+- system notification (off by default; says only that a question is waiting, never the content).
 
 **Approval alerts**
 
 - choose audio file / preview / restore built-in;
 - volume slider;
 - enable chime;
-- repeat switch + interval (1–3600 seconds, default 60).
+- repeat switch + interval (1–3600 seconds, default 60);
+- system notification (off by default; says only that an approval is waiting, never the content).
 
 Storage:
 
@@ -175,7 +178,7 @@ Storage:
 - approval audio: `$DSH_HOME/dsh-attention/approval.<ext>`;
 - both preference groups: `settings.json` in the same directory, overriding YAML row keys.
 
-Browsers require one click in the page before audio may play; if Preview is silent, click the page once and try again.
+Browsers require one click in the page before audio may play; if Preview is silent, click the page once and try again. System notifications also need the operating system to allow DSH notifications.
 
 ## Configuration
 
@@ -189,11 +192,13 @@ Plugin row keys (in `cordis.patch.yml` or the plugin page's advanced config):
 | `answer.countdownEnabled` | `true` | Last-seconds tick switch. |
 | `answer.countdownSeconds` | `10` | Tick once per second during the last N seconds, 1–300. |
 | `answer.audioFile` | `''` | Optional absolute path to answer audio; an imported file wins, then this, then the packaged `assets/default.wav`. |
+| `answer.systemNotification` | `false` | Show an OS bubble when a question waits (generic text only, never the question content). |
 | `approval.enabled` | `true` | Approval chime master switch. |
 | `approval.volume` | `0.7` | Approval volume 0–1. |
 | `approval.repeatEnabled` | `true` | Repeat the approval chime at the interval after the first one. |
 | `approval.intervalSeconds` | `60` | Repeat interval, 1–3600 seconds. |
 | `approval.audioFile` | `''` | Optional absolute path to approval audio; an imported file wins, then this, then the packaged `assets/approval.wav`. |
+| `approval.systemNotification` | `false` | Show an OS bubble when an approval waits (generic text only, never the approval content). |
 
 Preferences saved on the settings page override the row keys per group.
 
