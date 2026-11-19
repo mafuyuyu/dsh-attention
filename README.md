@@ -6,7 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.7-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.8-orange)](./package.json)
 
 **面向 [DeepSeek Harness](https://www.deepseek.com/harness/)（主要面向 DSH-OPS 模式）的答题与审批提醒插件：等待你回答 `ask_user_question` 时显示倒计时并在最后几秒滴答；工具请求权限审批时按间隔播放提醒音，直到你批准或拒绝。**
 
@@ -26,6 +26,15 @@ DeepSeek Harness 的提问本身没有“回答窗口”。到了 PTC 模式（`
 - **DSH-OPS 模式（`ops-ptc` / PTC 预设）**：`ask_user_question` 是 `run_code` 程序里的嵌套调用，回答窗口就是 `run_code` 的时间预算，到点提问会被自动取消。本插件的**倒计时、最后 N 秒滴答和答题窗口提醒主要就是为这个模式设计的**。
 - **标准模式**：`ask_user_question` 是直接调用，**没有超时，也不会自动取消**；插件只显示“已等待 m:ss”正计时，不虚构倒计时。提问出现时的提示音、系统气泡通知和权限审批提醒仍然可用。
 - `/attention-test` 模拟的是 DSH-OPS 的嵌套提问（带窗口），用来验证倒计时与滴答。
+
+| 模式 | preset | `ask_user_question` | 提问方式 | 插件显示 |
+| --- | --- | --- | --- | --- |
+| 标准模式 | `standard` | 有 | 直接调用，无超时 | 已等待 m:ss |
+| PTC 模式 | `ptc` / `ops-ptc`（OPS PTC） | 有 | `run_code` 内嵌套调用，受程序预算约束 | 倒计时 + 最后 N 秒滴答 |
+| 极简模式 | `minimal` | **没有** | 该模式没有提问工具 | 不显示答题倒计时/气泡 |
+| 创造模式 | `cordis` | 有 | 直接调用，无超时 | 已等待 m:ss |
+
+判断规则：只有带 PTC executor（`dsh-tool-executor-ptc`，即 `run_code`）的模式，提问才嵌套在程序里；有 ask 工具但没有 executor 的模式是直接调用；没有 ask 工具的模式不会产生提问卡片。权限审批提醒与模式无关。
 
 ## 功能一览
 

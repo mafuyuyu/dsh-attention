@@ -6,7 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.7-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.8-orange)](./package.json)
 
 **Answer and approval alerts for [DeepSeek Harness](https://www.deepseek.com/harness/), primarily for DSH-OPS mode: a countdown with last-seconds ticks while `ask_user_question` waits for you, and a repeating chime while a tool asks for permission approval, until you allow or reject it.**
 
@@ -26,6 +26,15 @@ Each group has its own audio, volume, and switches.
 - **DSH-OPS mode (`ops-ptc` / PTC presets)**: `ask_user_question` is a nested call inside a `run_code` program; the answer window is exactly the program's time budget, and the question is cancelled when it runs out. The plugin's **countdown, last-seconds ticks, and answer-window reminders are designed primarily for this mode**.
 - **Standard mode**: `ask_user_question` is called directly, **with no timeout and no automatic cancellation**; the plugin only shows a positive "waiting m:ss" timer and never invents a countdown. The question chime, system notifications, and approval reminders still work.
 - `/attention-test` simulates a DSH-OPS nested ask (with a window) to verify the countdown and ticks.
+
+| Mode | preset | `ask_user_question` | Invocation | Plugin display |
+| --- | --- | --- | --- | --- |
+| Standard | `standard` | yes | direct call, no timeout | waiting m:ss |
+| PTC | `ptc` / `ops-ptc` (OPS PTC) | yes | nested inside `run_code`, bounded by the program budget | countdown + last-seconds ticks |
+| Minimal | `minimal` | **no** | the mode has no ask tool | no answer countdown/bubble |
+| Creative | `cordis` | yes | direct call, no timeout | waiting m:ss |
+
+Rule of thumb: only presets with the PTC executor (`dsh-tool-executor-ptc`, i.e. `run_code`) nest asks inside the program; presets with the ask tool but no executor call it directly; presets without the ask tool never produce a question card. Approval reminders are mode-independent.
 
 ## Features
 
