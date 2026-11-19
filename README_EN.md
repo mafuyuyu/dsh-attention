@@ -6,9 +6,9 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.6-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.7-orange)](./package.json)
 
-**Answer and approval alerts for [DeepSeek Harness](https://www.deepseek.com/harness/): a countdown with last-seconds ticks while `ask_user_question` waits for you, and a repeating chime while a tool asks for permission approval, until you allow or reject it.**
+**Answer and approval alerts for [DeepSeek Harness](https://www.deepseek.com/harness/), primarily for DSH-OPS mode: a countdown with last-seconds ticks while `ask_user_question` waits for you, and a repeating chime while a tool asks for permission approval, until you allow or reject it.**
 
 A DeepSeek Harness question has no "answer window" of its own. In PTC mode (`ops-ptc` / `ptc` presets) `ask_user_question` is a nested call inside a `run_code` program, and the answer window is exactly the program's time budget — when it runs out, the question is cancelled.
 
@@ -21,11 +21,17 @@ This plugin splits both "you are needed" moments into **two independent groups**
 
 Each group has its own audio, volume, and switches.
 
+## Scope: DSH-OPS and standard mode
+
+- **DSH-OPS mode (`ops-ptc` / PTC presets)**: `ask_user_question` is a nested call inside a `run_code` program; the answer window is exactly the program's time budget, and the question is cancelled when it runs out. The plugin's **countdown, last-seconds ticks, and answer-window reminders are designed primarily for this mode**.
+- **Standard mode**: `ask_user_question` is called directly, **with no timeout and no automatic cancellation**; the plugin only shows a positive "waiting m:ss" timer and never invents a countdown. The question chime, system notifications, and approval reminders still work.
+- `/attention-test` simulates a DSH-OPS nested ask (with a window) to verify the countdown and ticks.
+
 ## Features
 
 | Capability | What it does |
 | --- | --- |
-| **Answer countdown** | Appears only while `ask_user_question` waits, preferring the remaining `run_code` budget; a question without a known deadline (for example a direct ask in standard mode) uses `fallbackWindowMs` as its default countdown window |
+| **Answer countdown** | Appears only while `ask_user_question` waits; DSH-OPS mode shows the remaining `run_code` budget, while a direct ask in standard mode has no timeout and shows a positive "waiting m:ss" timer |
 | **Answer chime** | Plays once when the question appears; uses the packaged default or a file imported in the settings page |
 | **Last-seconds ticks** | During the last `countdownSeconds` seconds (default 10) a short tick plays once per second, with a higher pitch for the final 3 seconds |
 | **Approval reminder** | One immediate chime when a permission approval appears, then a repeat every `intervalSeconds` (default 60) until you allow or reject; repeat can be turned off so it chimes only once |
@@ -190,7 +196,7 @@ Plugin row keys (in `cordis.patch.yml` or the plugin page's advanced config):
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `fallbackWindowMs` | `600000` | Answer window used when the model does not pass `timeoutMs` to `run_code`, and the default countdown window for questions without a known deadline (such as a direct ask in standard mode); keep it in sync with `ptc-runtime`'s `timeoutMs`. |
+| `fallbackWindowMs` | `600000` | Answer window used when the model does not pass `timeoutMs` to `run_code`; keep it in sync with `ptc-runtime`'s `timeoutMs`. |
 | `answer.enabled` | `true` | Answer chime master switch. |
 | `answer.volume` | `0.7` | Answer volume 0–1. |
 | `answer.countdownEnabled` | `true` | Last-seconds tick switch. |

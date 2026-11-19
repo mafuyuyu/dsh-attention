@@ -6,9 +6,9 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.6-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.7-orange)](./package.json)
 
-**面向 [DeepSeek Harness](https://www.deepseek.com/harness/) 的答题与审批提醒插件：等待你回答 `ask_user_question` 时显示倒计时并在最后几秒滴答；工具请求权限审批时按间隔播放提醒音，直到你批准或拒绝。**
+**面向 [DeepSeek Harness](https://www.deepseek.com/harness/)（主要面向 DSH-OPS 模式）的答题与审批提醒插件：等待你回答 `ask_user_question` 时显示倒计时并在最后几秒滴答；工具请求权限审批时按间隔播放提醒音，直到你批准或拒绝。**
 
 DeepSeek Harness 的提问本身没有“回答窗口”。到了 PTC 模式（`ops-ptc` / `ptc` 预设），`ask_user_question` 是 `run_code` 程序里的嵌套调用，回答窗口完全由 `run_code` 的时间预算决定——预算一到，提问会被直接取消。
 
@@ -21,11 +21,17 @@ DeepSeek Harness 的提问本身没有“回答窗口”。到了 PTC 模式（`
 
 两组各有自己的音频、音量和开关，互不影响。
 
+## 适用范围：DSH-OPS 与标准模式
+
+- **DSH-OPS 模式（`ops-ptc` / PTC 预设）**：`ask_user_question` 是 `run_code` 程序里的嵌套调用，回答窗口就是 `run_code` 的时间预算，到点提问会被自动取消。本插件的**倒计时、最后 N 秒滴答和答题窗口提醒主要就是为这个模式设计的**。
+- **标准模式**：`ask_user_question` 是直接调用，**没有超时，也不会自动取消**；插件只显示“已等待 m:ss”正计时，不虚构倒计时。提问出现时的提示音、系统气泡通知和权限审批提醒仍然可用。
+- `/attention-test` 模拟的是 DSH-OPS 的嵌套提问（带窗口），用来验证倒计时与滴答。
+
 ## 功能一览
 
 | 能力 | 说明 |
 | --- | --- |
-| **答题倒计时** | 仅在 `ask_user_question` 等待时出现，优先显示 `run_code` 预算的剩余时间；没有已知截止时间的提问（如标准模式直接提问）使用 `fallbackWindowMs` 作为默认倒计时窗口 |
+| **答题倒计时** | 仅在 `ask_user_question` 等待时出现；DSH-OPS 模式显示 `run_code` 预算的剩余时间，标准模式的直接提问没有超时，显示“已等待 m:ss”正计时 |
 | **答题提示音** | 问题出现时播放一次；默认使用插件自带音频，也可在设置页导入自己的文件 |
 | **最后 N 秒滴答** | 剩余时间进入最后 `countdownSeconds` 秒（默认 10）后每秒响一次，最后 3 秒音调更高 |
 | **权限审批提醒** | 审批出现时立即响一次，按 `intervalSeconds`（默认 60 秒）重复提醒，直到你批准或拒绝；可关闭重复，只在出现时响一次 |
@@ -190,7 +196,7 @@ timed 提问（`mode: timed`）直接使用问题卡片自带的前台窗口；�
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
-| `fallbackWindowMs` | `600000` | 模型没给 `run_code` 传 `timeoutMs` 时使用的回答窗口，也是没有已知截止时间的提问（如标准模式直接提问）的默认倒计时窗口；与 `ptc-runtime` 的 `timeoutMs` 保持一致。 |
+| `fallbackWindowMs` | `600000` | 模型没给 `run_code` 传 `timeoutMs` 时使用的回答窗口；应与 `ptc-runtime` 的 `timeoutMs` 保持一致。 |
 | `answer.enabled` | `true` | 答题提示音总开关。 |
 | `answer.volume` | `0.7` | 答题音量 0–1。 |
 | `answer.countdownEnabled` | `true` | 最后 N 秒滴答开关。 |
