@@ -6,7 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.5-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.6-orange)](./package.json)
 
 **面向 [DeepSeek Harness](https://www.deepseek.com/harness/) 的答题与审批提醒插件：等待你回答 `ask_user_question` 时显示倒计时并在最后几秒滴答；工具请求权限审批时按间隔播放提醒音，直到你批准或拒绝。**
 
@@ -25,7 +25,7 @@ DeepSeek Harness 的提问本身没有“回答窗口”。到了 PTC 模式（`
 
 | 能力 | 说明 |
 | --- | --- |
-| **答题倒计时** | 仅在 `ask_user_question` 等待时出现，显示 `run_code` 预算的剩余时间；普通阻塞提问显示已等待时长，不虚构截止时间 |
+| **答题倒计时** | 仅在 `ask_user_question` 等待时出现，优先显示 `run_code` 预算的剩余时间；没有已知截止时间的提问（如标准模式直接提问）使用 `fallbackWindowMs` 作为默认倒计时窗口 |
 | **答题提示音** | 问题出现时播放一次；默认使用插件自带音频，也可在设置页导入自己的文件 |
 | **最后 N 秒滴答** | 剩余时间进入最后 `countdownSeconds` 秒（默认 10）后每秒响一次，最后 3 秒音调更高 |
 | **权限审批提醒** | 审批出现时立即响一次，按 `intervalSeconds`（默认 60 秒）重复提醒，直到你批准或拒绝；可关闭重复，只在出现时响一次 |
@@ -190,7 +190,7 @@ timed 提问（`mode: timed`）直接使用问题卡片自带的前台窗口；�
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
-| `fallbackWindowMs` | `600000` | 模型没给 `run_code` 传 `timeoutMs` 时使用的回答窗口；应与 `ptc-runtime` 的 `timeoutMs` 保持一致。 |
+| `fallbackWindowMs` | `600000` | 模型没给 `run_code` 传 `timeoutMs` 时使用的回答窗口，也是没有已知截止时间的提问（如标准模式直接提问）的默认倒计时窗口；与 `ptc-runtime` 的 `timeoutMs` 保持一致。 |
 | `answer.enabled` | `true` | 答题提示音总开关。 |
 | `answer.volume` | `0.7` | 答题音量 0–1。 |
 | `answer.countdownEnabled` | `true` | 最后 N 秒滴答开关。 |

@@ -178,6 +178,7 @@ window.__ModuleLoader__.load({
           replay: '点击可重播提示音',
           deadlineTip: '本次截止窗口',
           noDeadlineTip: '该问题没有截止时间',
+          fallbackTip: '默认等待窗口',
           title: '答题与审批提醒',
           desc: '在 DeepSeek Harness 等待你回答 ask_user_question 时显示倒计时；在工具请求权限审批时按间隔播放提醒音。答题与审批两组提示音、音量和开关互相独立。',
           answerTitle: '答题提醒',
@@ -231,6 +232,7 @@ window.__ModuleLoader__.load({
           replay: 'Click to replay the chime',
           deadlineTip: 'this deadline',
           noDeadlineTip: 'this question has no deadline',
+          fallbackTip: 'default wait window',
           title: 'Answer & approval alerts',
           desc: 'Shows a countdown while DeepSeek Harness waits for your answer to ask_user_question, and plays a reminder at a chosen interval while a tool asks for permission approval. Answer and approval have independent audio, volume and switches.',
           answerTitle: 'Answer alerts',
@@ -827,6 +829,7 @@ window.__ModuleLoader__.load({
       let budgetMs = settings.fallbackWindowMs
       let deadlineKnown = false
 
+      let fallbackWindow = false
       if (carrier !== undefined) {
         remainingSeconds = Math.max(0, Math.ceil(carrier.remainingMs / 1000))
         deadlineKnown = true
@@ -841,6 +844,14 @@ window.__ModuleLoader__.load({
           budgetMs = testWindow
           remainingSeconds = Math.max(0, Math.ceil((since + testWindow - now) / 1000))
           deadlineKnown = true
+        }
+      } else {
+        const since = firstSeen.get(firstSeenKey)
+        if (since !== undefined) {
+          budgetMs = settings.fallbackWindowMs
+          remainingSeconds = Math.max(0, Math.ceil((since + budgetMs - now) / 1000))
+          deadlineKnown = true
+          fallbackWindow = true
         }
       }
 
@@ -865,7 +876,8 @@ window.__ModuleLoader__.load({
         tip = label + ' · ' + t.continued + ' · ' + t.replay
       } else if (deadlineKnown) {
         text = label + ' ' + clock(remainingSeconds)
-        tip = label + '：剩余 ' + clock(remainingSeconds) + '（' + t.deadlineTip + ' ' + clock(Math.round(budgetMs / 1000)) + '） · ' + t.replay
+        const windowLabel = fallbackWindow ? t.fallbackTip : t.deadlineTip
+        tip = label + '：剩余 ' + clock(remainingSeconds) + '（' + windowLabel + ' ' + clock(Math.round(budgetMs / 1000)) + '） · ' + t.replay
       } else {
         const since = firstSeen.get(firstSeenKey)
         const elapsed = Math.max(0, Math.floor((now - (since === undefined ? now : since)) / 1000))
