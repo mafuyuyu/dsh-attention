@@ -35,7 +35,7 @@ const ctx = {
   userQuestions: {
     async ask(request) {
       asked.push(request)
-      return { answers: [{ id: request.questions[0].id, selected: ['测试通过'] }] }
+      return { answers: request.questions.map(question => ({ id: question.id, selected: ['测试通过'] })) }
     },
   },
 }
@@ -128,8 +128,9 @@ const result = await commandDef.handler({
   attachments: [],
 })
 if (result.kind !== 'success') throw new Error('test command failed: ' + JSON.stringify(result))
-if (asked.length !== 3) throw new Error('expected 3 questions, got ' + asked.length)
-const ids = asked.map(request => request.questions[0].id)
+if (asked.length !== 1) throw new Error('expected one batched ask, got ' + asked.length)
+if (!asked[0] || !Array.isArray(asked[0].questions) || asked[0].questions.length !== 3) throw new Error('expected 3 questions in one ask')
+const ids = asked[0].questions.map(question => question.id)
 if (new Set(ids).size !== 3) throw new Error('question ids must be unique per run: ' + ids.join(','))
 const parsed = ids.map((id) => {
   const parts = id.split('-')
@@ -143,7 +144,8 @@ const parsed = ids.map((id) => {
 if (!parsed.every(item => item.test && item.window === 15000)) throw new Error('unexpected question ids: ' + ids.join(','))
 if (parsed.map(item => item.index).join(',') !== '1,2,3') throw new Error('unexpected question order: ' + ids.join(','))
 if (parsed.some(item => item.run !== parsed[0].run || item.run === 'undefined')) throw new Error('run token missing: ' + ids.join(','))
-if (!String(result.text).includes('连续 3 次')) throw new Error('unexpected summary: ' + result.text)
+if (!String(result.text).includes('3 题提问')) throw new Error('unexpected summary: ' + result.text)
+if (!String(result.text).includes('第 3 题')) throw new Error('summary must cover all three questions: ' + result.text)
 
 rmSync(home, { recursive: true, force: true })
 console.log(JSON.stringify({

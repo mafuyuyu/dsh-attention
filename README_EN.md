@@ -6,7 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![platform](https://img.shields.io/badge/DSH-Web%20%7C%20Desktop-blue)](https://www.deepseek.com/harness/)
-[![version](https://img.shields.io/badge/version-0.2.8-orange)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.9-orange)](./package.json)
 
 **Answer and approval alerts for [DeepSeek Harness](https://www.deepseek.com/harness/), primarily for DSH-OPS mode: a countdown with last-seconds ticks while `ask_user_question` waits for you, and a repeating chime while a tool asks for permission approval, until you allow or reject it.**
 
@@ -48,7 +48,7 @@ Rule of thumb: only presets with the PTC executor (`dsh-tool-executor-ptc`, i.e.
 | **System notifications** | Optional for both groups: an OS-level bubble says a question or approval is waiting, never its content, and **only appears while the DSH window is unfocused, minimized, or you switched to another app**; off by default |
 | **Keeps sounding across pages** | Sounds are driven by module-level schedulers, so they continue after switching to another Session or plugin page; returning does not reset, replay, or double anything, and there is no floating overlay |
 | **Settings page** | One card per group: import/preview/restore, volume slider, switches and parameters |
-| **Test command** | `/attention-test` asks three consecutive questions that mimic a real ask: different content, one chime each, and an automatic cancel at the deadline |
+| **Test command** | `/attention-test` sends one ask containing three questions (one card, submit only on the last question, earlier answers editable before submitting), one chime for the batch, and an automatic cancel at the deadline |
 | **Local only** | Reads/writes only local settings and audio files: no network, no Session-log writes, no model tool schemas |
 
 ## Install
@@ -151,14 +151,16 @@ Type this in the composer (no arguments):
 /attention-test
 ```
 
-It asks **three consecutive questions**, one at a time, with different content, and **each question plays one chime**. Every question mimics an ordinary `run_code` ask:
+It sends **one** ask containing **three questions**, matching a real multi-question ask:
 
+- **the first two questions have no submit button; only the last one submits**, and earlier answers can be edited before submitting;
+- the batch plays one chime when it appears;
 - blocking, with no timed foreground window, so **selecting an option does not pause the countdown**;
 - the plugin draws an absolute deadline and ticks once per second during the last `countdownSeconds` seconds;
-- at the deadline the Host cancels that question and the command moves on;
-- per-question window = `max(15 s, countdownSeconds + 5 s)`, capped at 60 s.
+- at the deadline the Host cancels the whole batch;
+- batch window = `max(15 s, countdownSeconds + 5 s)`, capped at 60 s.
 
-When all three finish, the command reports a summary (answered / timed out / cancelled).
+After submitting or cancelling, the command reports a summary for all three questions (answered / timed out / cancelled).
 
 > This command tests the **answer group**; preview the approval chime with **Preview** on the settings page.
 

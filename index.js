@@ -521,37 +521,40 @@ async function runAttentionTest(ctx, invocation, settings) {
       MAX_TEST_WINDOW_MS,
       Math.max(MIN_TEST_WINDOW_MS, (effective.answer.countdownSeconds + 5) * 1000),
     )
-    const results = []
     const runId = Date.now().toString(36) + (Math.random().toString(36).slice(2, 6) || 'x')
-    for (let index = 1; index <= TEST_QUESTION_COUNT; index += 1) {
-      if (invocation.signal.aborted) break
-      const controller = new AbortController()
-      const timer = setTimeout(() => { controller.abort() }, windowMs)
-      try {
-        const answer = await ctx.userQuestions.ask({
-          questions: [testQuestion(runId, index, windowMs)],
-          agent: invocation.agent,
-          signal: AbortSignal.any([invocation.signal, controller.signal]),
-        })
-        const labels = (answer.answers || [])
-          .map(item => [...(item.selected || []), ...(item.custom ? [item.custom] : [])].join(' / '))
-          .filter(label => label.length > 0)
-        results.push('第 ' + String(index) + ' 题：已回答（' + (labels.length > 0 ? labels.join('；') : '空') + '）')
-      } catch (error) {
-        const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
-        if (controller.signal.aborted && !invocation.signal.aborted) {
-          results.push('第 ' + String(index) + ' 题：超时自动取消')
-        } else if (invocation.signal.aborted || code === 'ASK_CANCELLED') {
-          results.push('第 ' + String(index) + ' 题：已被你取消')
-          break
-        } else {
-          throw error
-        }
-      } finally {
-        clearTimeout(timer)
+    const questions = Array.from(
+      { length: TEST_QUESTION_COUNT },
+      (_, index) => testQuestion(runId, index + 1, windowMs),
+    )
+    const controller = new AbortController()
+    const timer = setTimeout(() => { controller.abort() }, windowMs)
+    try {
+      const answer = await ctx.userQuestions.ask({
+        questions,
+        agent: invocation.agent,
+        signal: AbortSignal.any([invocation.signal, controller.signal]),
+      })
+      const answers = answer.answers || []
+      const lines = questions.map((question, index) => {
+        const item = answers.find(entry => entry && entry.id === question.id)
+        const labels = item
+          ? [...(item.selected || []), ...(item.custom ? [item.custom] : [])].filter(label => label.length > 0).join(' / ')
+          : ''
+        return '第 ' + String(index + 1) + ' 题：' + (labels !== '' ? labels : '空')
+      })
+      return { kind: 'success', text: '3 题提问倒计时测试结束：\n' + lines.join('\n') }
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
+      if (controller.signal.aborted && !invocation.signal.aborted) {
+        return { kind: 'success', text: '3 题提问倒计时测试结束：\n第 1～3 题：超时自动取消' }
       }
+      if (invocation.signal.aborted || code === 'ASK_CANCELLED') {
+        return { kind: 'success', text: '3 题提问倒计时测试结束：\n第 1～3 题：已被你取消' }
+      }
+      throw error
+    } finally {
+      clearTimeout(timer)
     }
-    return { kind: 'success', text: '连续 3 次答题倒计时测试结束：\n' + results.join('\n') }
   } catch (error) {
     return { kind: 'error', text: '测试失败：' + String((error && error.message) || error) }
   }
@@ -568,7 +571,7 @@ export function apply(ctx, config = {}) {
   ctx.effect(function* () {
     yield ctx.commands.register({
       name: 'attention-test',
-      description: '连续 3 次模拟正常提问的倒计时与提示音测试（无参数，直接发送）。',
+      description: '一次包含 3 个问题的倒计时与提示音测试（同一张卡片、最后一次提交；无参数，直接发送）。',
       handler: invocation => runAttentionTest(ctx, invocation, settings),
     })
   }, 'attention: command')
